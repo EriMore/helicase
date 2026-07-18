@@ -64,3 +64,33 @@ Replace the molecular silhouette path with a browser-native Mol* adapter while r
 Commit a verified AlphaFold entry with real pLDDT data to unlock the confidence X-ray, then import the first verified RFdiffusion trajectory.
 
 ---
+
+## 2026-07-18T16:24:00+01:00 — Publish structure adapter
+
+**Phase:** Implementation
+
+**Objective**
+Publish the cited-structure adapter and preserve the evidence boundary for the next implementation session.
+
+**Completed**
+- Pushed the Mol* adapter and evidence correction to the feature branch.
+- Confirmed typecheck, lint, and production build success.
+
+**Files**
+- Added: None.
+- Modified: Development log.
+- Removed: None.
+
+**Git**
+- Branch: agent/atlas-foundation.
+- Commit(s): 23096d7.
+- PR: None — `gh auth status` reports that the EriMore keyring token is invalid and requires `gh auth refresh -h github.com`.
+- Status: Branch pushed successfully; draft PR remains blocked by GitHub CLI authentication.
+
+**Codex**
+- Session ID: Pending (/feedback)
+
+**Next**
+Import a verified AlphaFold confidence fixture, then replace the design choreography fixture with a provenance-carrying offline trajectory.
+
+---
