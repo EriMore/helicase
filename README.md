@@ -15,9 +15,10 @@ Set `OPENAI_API_KEY` to enable the server-side Responses API route. Without it, 
 
 ## Current implementation
 
-- Cinematic loading sequence, map-scale star field, structure transition, confidence X-ray, and interruption path.
+- Cinematic loading sequence, staged density field, cited-structure transition, and interruption path.
 - Strict domain commands shared by direct controls and the copilot route.
 - Canonical brand assets are derived into `public/brand/logo/` without modification.
+- A client-only Mol* adapter loads the cited RCSB BinaryCIF structure for PDB 1EMA. This experimental structure has no pLDDT confidence, so Confidence X-Ray remains unavailable until a verified predicted fixture is imported.
 - The current design reveal is a clearly marked choreography fixture. It is **not** a scientific result; it will be replaced only by verified offline RFdiffusion → ProteinMPNN → Boltz-2 trajectory data with provenance and predicted-not-validated scores.
 
 ## Architecture
@@ -36,7 +37,7 @@ The product and engineering constitution remains under [`docs/`](docs/). Start w
 
 ## Current status
 
-The repository is intentionally documentation-only. No application scaffold, dependency installation, generated data, or placeholder UI is part of the founding architecture PR.
+The first runnable Atlas slice is now implemented. The density field and design choreography remain explicitly labelled fixtures until verified atlas data is imported.
 
 ## Product thesis
 

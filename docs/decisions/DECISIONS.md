@@ -27,3 +27,7 @@ Authentication, collaboration, project graphs, accounts, and generalized job orc
 ## D-007: Semantic CSS tokens are the first presentation layer
 
 The initial single-screen experience uses a small, explicit CSS token layer rather than introducing utility markup across the scene composition. This keeps the visual language adjacent to its motion and spatial rules while the application is renderer-heavy. Tailwind remains a viable future implementation detail, but it does not create user-visible capability at this stage.
+
+## D-008: Mol* is a client-only rendering adapter
+
+Mol* is initialized dynamically after the browser mounts. Its plugin runtime is not compatible with Next.js server prerendering, and isolating it keeps the browser-only molecular renderer outside the domain and server boundaries. A service failure is visible and recoverable; it never becomes a synthetic scientific rendering.

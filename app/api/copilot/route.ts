@@ -8,8 +8,8 @@ const systemInstruction = "You are Atlas, a rigorous structural-biology guide. G
 function fallback(message: string) {
   const asksForDesign = /design|binder|bind/i.test(message);
   const asksForTrust = /trust|confidence|uncertain|x-ray|xray/i.test(message);
-  const toolCalls: CopilotToolCall[] = asksForDesign ? [{ name: "design_binder", arguments: { target_site: featuredProtein.designableSite.id, specification: message } }] : asksForTrust ? [{ name: "color_by", arguments: { scheme: "trusted_core" } }] : [];
-  const text = asksForDesign ? "I can stage the available binder-design playback at the exposed barrel loop. This development build labels its choreography fixture; a verified RFdiffusion trajectory will replace it before scientific demonstration." : asksForTrust ? "The confidence view separates the stable core from regions where a structural prediction should be interpreted with more caution. I am opening the X-ray view." : "Ask where confidence changes, or ask to design a small binder for the exposed loop. I will show the action in the scene rather than only describe it.";
+  const toolCalls: CopilotToolCall[] = asksForDesign ? [{ name: "design_binder", arguments: { target_site: featuredProtein.designableSite.id, specification: message } }] : [];
+  const text = asksForDesign ? "I can stage the available binder-design playback at the exposed barrel loop. This development build labels its choreography fixture; a verified RFdiffusion trajectory will replace it before scientific demonstration." : asksForTrust ? "This selected record is an experimental PDB structure, so it does not carry AlphaFold pLDDT confidence for an X-ray view. Choose a predicted entry once the next atlas fixture is imported." : "Ask about the cited structure, or ask to design a small binder for the exposed loop. I will show the action in the scene rather than only describe it.";
   return { text, toolCalls, source: "local-fallback" };
 }
 

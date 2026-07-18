@@ -7,7 +7,7 @@ export type Protein = {
   accession: string;
   family: string;
   length: number;
-  confidence: number;
+  confidence: number | null;
   designableSite: { id: string; name: string; residues: string };
   citation: string;
 };
