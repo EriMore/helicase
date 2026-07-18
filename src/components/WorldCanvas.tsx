@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import type { SceneMode } from "@/domain/atlas";
 import type { AtlasCluster, AtlasManifest, AtlasProtein, CameraContext } from "@/domain/atlas-data";
@@ -35,7 +35,7 @@ void main() {
   vColor = color;
   vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
   float perspective = clamp(250.0 / max(1.0, -mvPosition.z), 0.55, 5.5);
-  gl_PointSize = atlasSize * perspective;
+  gl_PointSize = min(24.0, atlasSize * perspective);
   gl_Position = projectionMatrix * mvPosition;
   vFade = smoothstep(480.0, 32.0, -mvPosition.z);
 }`;
@@ -90,6 +90,9 @@ export function WorldCanvas({
   const proteinIndex = useRef<AtlasProtein[]>([]);
   const desiredPosition = useRef(new THREE.Vector3(0, 18, 270));
   const desiredTarget = useRef(new THREE.Vector3());
+  const queryReturnContext = useRef<{ position: THREE.Vector3; target: THREE.Vector3 } | null>(null);
+  const queryActive = useRef(false);
+  const [sceneEpoch, setSceneEpoch] = useState(0);
 
   useEffect(() => { modeRef.current = mode; }, [mode]);
   useEffect(() => { manifestRef.current = manifest; }, [manifest]);
@@ -98,6 +101,18 @@ export function WorldCanvas({
   useEffect(() => { selectedRef.current = selectedProteinId; }, [selectedProteinId]);
   useEffect(() => { focusedRegionRef.current = focusedRegionId; }, [focusedRegionId]);
   useEffect(() => { callbacks.current = { onSelectProtein, onFocusCluster, onHoverProtein, onMetrics }; }, [onFocusCluster, onHoverProtein, onMetrics, onSelectProtein]);
+
+  useEffect(() => {
+    const active = highlightedIds.length > 0;
+    if (active && !queryActive.current) {
+      queryReturnContext.current = { position: desiredPosition.current.clone(), target: desiredTarget.current.clone() };
+    } else if (!active && queryActive.current && queryReturnContext.current) {
+      desiredPosition.current.copy(queryReturnContext.current.position);
+      desiredTarget.current.copy(queryReturnContext.current.target);
+      queryReturnContext.current = null;
+    }
+    queryActive.current = active;
+  }, [highlightedIds]);
 
   useEffect(() => {
     const points = clusterPoints.current;
@@ -119,22 +134,21 @@ export function WorldCanvas({
     geometry.computeBoundingSphere();
     points.geometry = geometry;
     clusterIndex.current = manifest.clusters;
-  }, [manifest]);
+  }, [manifest, sceneEpoch]);
 
   useEffect(() => {
     const points = proteinPoints.current;
     if (!points) return;
     points.geometry.dispose();
-    const positions = new Float32Array(proteins.length * 3);
-    const colors = new Float32Array(proteins.length * 3);
-    const sizes = new Float32Array(proteins.length);
     const highlighted = highlightedRef.current;
-    proteins.forEach((protein, index) => {
+    const renderedProteins = highlighted.size ? proteins.filter((protein) => highlighted.has(protein.id)) : proteins;
+    const positions = new Float32Array(renderedProteins.length * 3);
+    const colors = new Float32Array(renderedProteins.length * 3);
+    const sizes = new Float32Array(renderedProteins.length);
+    renderedProteins.forEach((protein, index) => {
       positions.set(protein.position, index * 3);
       const base = palette[protein.region] ?? palette.unresolved;
-      const isMatch = highlighted.size === 0 || highlighted.has(protein.id);
-      const color = isMatch ? base : base.clone().multiplyScalar(0.12);
-      colors.set([color.r, color.g, color.b], index * 3);
+      colors.set([base.r, base.g, base.b], index * 3);
       sizes[index] = highlighted.has(protein.id) ? 5.8 : 2.1 + Math.min(2.6, Math.log2(Math.max(16, protein.length)) * 0.25);
     });
     const geometry = new THREE.BufferGeometry();
@@ -143,16 +157,18 @@ export function WorldCanvas({
     geometry.setAttribute("atlasSize", new THREE.BufferAttribute(sizes, 1));
     geometry.computeBoundingSphere();
     points.geometry = geometry;
-    proteinIndex.current = proteins;
+    proteinIndex.current = renderedProteins;
     if (highlighted.size > 0) {
       const matches = proteins.filter((protein) => highlighted.has(protein.id));
       if (matches.length) {
         const centre = matches.reduce((sum, protein) => sum.add(new THREE.Vector3(...protein.position)), new THREE.Vector3()).multiplyScalar(1 / matches.length);
+        const radius = matches.reduce((largest, protein) => Math.max(largest, centre.distanceTo(new THREE.Vector3(...protein.position))), 0);
+        const framingDistance = THREE.MathUtils.clamp(radius * 1.35 + 38, 85, 155);
         desiredTarget.current.copy(centre);
-        desiredPosition.current.copy(centre).add(new THREE.Vector3(0, 10, Math.min(115, 48 + matches.length * 0.7)));
+        desiredPosition.current.copy(centre).add(new THREE.Vector3(0, framingDistance * 0.08, framingDistance));
       }
     }
-  }, [highlightedIds, proteins]);
+  }, [highlightedIds, proteins, sceneEpoch]);
 
   useEffect(() => {
     if (!manifest || !focusedRegionId) return;
@@ -189,6 +205,7 @@ export function WorldCanvas({
     const proteinField = new THREE.Points(new THREE.BufferGeometry(), makePointMaterial(0.78));
     clusterPoints.current = clusters;
     proteinPoints.current = proteinField;
+    setSceneEpoch((current) => current + 1);
     scene.add(clusters, proteinField);
 
     const dustGeometry = new THREE.BufferGeometry();
@@ -317,7 +334,8 @@ export function WorldCanvas({
       target.lerp(desiredTarget.current, state === "diving" ? 0.09 : 0.07);
       camera.lookAt(target);
       const distance = camera.position.distanceTo(target);
-      const clusterOpacity = state === "structure" || state === "xray" || state === "designing" || state === "designComplete" ? 0.035 : THREE.MathUtils.smoothstep(distance, 42, 190) * 0.86 + 0.08;
+      const queryClusterFactor = highlightedRef.current.size ? 0.003 : 1;
+      const clusterOpacity = state === "structure" || state === "xray" || state === "designing" || state === "designComplete" ? 0.035 : (THREE.MathUtils.smoothstep(distance, 42, 190) * 0.86 + 0.08) * queryClusterFactor;
       const proteinOpacity = state === "structure" || state === "xray" || state === "designing" || state === "designComplete" ? 0.025 : (1 - THREE.MathUtils.smoothstep(distance, 95, 245)) * 0.95;
       (clusters.material as THREE.ShaderMaterial).uniforms.opacity.value = clusterOpacity;
       (proteinField.material as THREE.ShaderMaterial).uniforms.opacity.value = proteinOpacity;
@@ -332,7 +350,7 @@ export function WorldCanvas({
         const memory = (performance as Performance & { memory?: { usedJSHeapSize: number } }).memory;
         callbacks.current.onMetrics({
           fps: Math.round(metricFrames * 1000 / (now - metricStart)),
-          visibleEntities: distance > 150 ? clusterIndex.current.length : proteinIndex.current.length,
+          visibleEntities: highlightedRef.current.size ? proteinIndex.current.length : distance > 150 ? clusterIndex.current.length : proteinIndex.current.length,
           cameraDistance: Math.round(distance),
           heapMb: memory ? Math.round(memory.usedJSHeapSize / 1048576) : null,
         });

@@ -11,6 +11,8 @@ function scoreRecord(record, terms) {
     family: normalize(record.family),
     class: normalize(record.region),
   };
+  const searchable = Object.values(fields).join(" ");
+  if (!terms.every((term) => searchable.includes(term))) return { score: 0, matchedBy: [] };
   const weights = { identifier: 8, name: 6, family: 5, function: 4, organism: 3, class: 2 };
   const matchedBy = [];
   let score = 0;
@@ -32,7 +34,9 @@ self.onmessage = (event) => {
     return;
   }
   if (message.type === "QUERY") {
-    const terms = normalize(message.query).split(" ").filter(Boolean);
+    const stopWords = new Set(["a", "an", "and", "for", "in", "me", "of", "or", "protein", "proteins", "show", "the", "to", "with"]);
+    const aliases = { human: ["homo", "sapiens"], humans: ["homo", "sapiens"] };
+    const terms = normalize(message.query).split(" ").filter((term) => term && !stopWords.has(term)).flatMap((term) => aliases[term] ?? [term]);
     if (!terms.length) {
       self.postMessage({ type: "RESULTS", requestId: message.requestId, results: [] });
       return;

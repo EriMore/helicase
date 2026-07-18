@@ -66,10 +66,12 @@ export function AtlasExperience() {
   const runQuery = async (value: string) => {
     const nextQuery = value.trim();
     if (!nextQuery) {
+      setQuery("");
       setQueryResults([]);
       issue({ type: "CLEAR_QUERY" });
       return [];
     }
+    setQuery(nextQuery);
     setQuerying(true);
     const results = await atlas.search(nextQuery);
     setQueryResults(results);
@@ -197,7 +199,7 @@ export function AtlasExperience() {
       {state.query && <section className="query-readout">
         <div><span>SPATIAL RESPONSE</span><button onClick={() => { setQuery(""); setQueryResults([]); issue({ type: "CLEAR_QUERY" }); }}>CLEAR</button></div>
         <h2>{queryResults.length ? `${queryResults.length} signals resolved` : "No indexed signals yet"}</h2>
-        <p>Unrelated records are dimmed; the camera is centred on the matching neighbourhood.</p>
+        <p>Matches resolve as individual addresses; unrelated proteins recede into aggregate context.</p>
         <ol>{queryResults.slice(0, 4).map((result) => <li key={result.protein.id}>
           <button onClick={() => selectProtein(result.protein)}><span>{result.protein.id}</span>{result.protein.name}<small>{result.matchedBy.join(" · ")}</small></button>
         </li>)}</ol>
@@ -216,6 +218,7 @@ export function AtlasExperience() {
         </dl>
         <p className="citation">UniProt {selectedProtein.id} · {selectedProtein.structure.source} {selectedProtein.structure.accession}</p>
         <p className="rendering-status">Atlas position encodes annotation-family proximity. It is not a measured structural distance.</p>
+        {selectedProtein.structure.kind === "experimental" && <p className="rendering-status">The linked PDB entry may cover a domain, chain, or complex fragment; residue coverage is not yet resolved.</p>}
       </section>
       <button className="return" onClick={() => issue({ type: "RETURN_TO_UNIVERSE" })}>← Return to spatial context</button>
       {state.mode === "structure" && <button className="xray-trigger" disabled><span>✦</span> Confidence X-ray requires verified confidence extraction</button>}

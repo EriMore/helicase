@@ -1,5 +1,48 @@
 ---
 
+## 2026-07-18T20:25:00+01:00 - Protein universe milestone
+
+**Phase:** Full-scale Atlas implementation
+
+**Objective**
+Replace the direct-to-1EMA integration proof with a navigable, queryable, multiscale universe built from real protein records.
+
+**Completed**
+- Built an unrestricted reviewed-UniProt ingestion pipeline with deterministic annotation-family spatialization, provenance-bearing manifests, progressive shards, and CI artifacts.
+- Measured the complete reviewed corpus at 575,503 proteins, 55,558 annotation families, 39,017 PDB-linked records, and 241 MB uncompressed.
+- Published a measured browser delivery profile containing 75,000 proteins, 19,451 families, 22,429 PDB-linked records, and 64 shards (34 MB uncompressed). This is a deterministic derivative of the full query, not a hand-authored fixture.
+- Replaced the hardcoded 1EMA entry flow with a persistent Three.js universe, semantic region/family LOD, direct spatial navigation, worker-backed multi-field search, query-driven scene focus, and camera-context restoration.
+- Added typed copilot commands for atlas query, region focus, protein flight, structure return, color changes, and design requests through the shared SceneController boundary.
+- Deferred molecular coordinates until selection, then resolved real RCSB BinaryCIF or AlphaFold mmCIF structures in Mol*. Added an explicit caveat that linked PDB records may cover only a domain, chain, or complex fragment.
+- Corrected a Mol* nested-React-root teardown race found during universe-to-structure-to-universe QA.
+- Extended the reference synthesis with AIR and Wembi while preserving Helicase's camera-as-understanding interaction model.
+
+**Scale decision**
+- Direct local UniProt requests were blocked by environment DNS (`ERR_NAME_NOT_RESOLVED` / `Could not resolve host`). GitHub Actions completed the same unrestricted query in 131 seconds.
+- The full 241 MB static output was retained as the authoritative build artifact. The 75k profile was selected for live delivery after measuring initial transfer, JSON parsing, and browser-memory implications; all contracts remain scale-independent.
+
+**Validation**
+- `npm run typecheck` - passed.
+- `npm run lint` - passed.
+- `npm run build` - passed with Next.js 16.1.6 and Webpack.
+- Full-data production QA at 1440 x 900 - passed.
+- 75,000 records reached ready state in 4.8 seconds on the local production server.
+- Universe and query states held 60 FPS; observed heap settled near 98-158 MB after loading, with a transient 210 MB peak during dev/HMR query reconstruction.
+- Multi-constraint query `membrane proteins in humans` returned 240 Homo sapiens matches and reduced the scene to 240 addressable protein points.
+- RCSB PDB 5X1G and AlphaFold A0A075F7E9 both rendered successfully in Mol*.
+- Query clear restored the pre-query universe framing; structure return restored query and camera context.
+- Browser console - zero warnings or errors in the final production journey.
+
+**Git**
+- Branch: `agent/protein-universe`.
+- Logical commits include full-corpus pipeline, browser delivery profile, universe renderer/query system, Mol* teardown correction, and measured architecture/design documentation.
+- Draft PR: pending final push.
+
+**Next**
+Replace annotation-family coordinates with a versioned learned embedding projection while preserving IDs and shard contracts; add verified structure coverage and AlphaFold confidence extraction before enabling Confidence X-ray.
+
+---
+
 ## 2026-07-18T17:32:39+01:00 — Mol* structure presentation correction
 
 **Phase:** Blocking visual defect
