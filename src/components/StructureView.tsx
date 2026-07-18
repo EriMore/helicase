@@ -24,10 +24,19 @@ export function StructureView({ active, structure: structureReference }: Structu
     target.className = "structure-molstar-root";
     host.current.appendChild(target);
 
+    let cleanupQueued = false;
     const disposeInstance = () => {
-      plugin?.dispose();
-      reactRoot?.unmount();
-      target.remove();
+      if (cleanupQueued) return;
+      cleanupQueued = true;
+      const pluginToDispose = plugin;
+      const rootToUnmount = reactRoot;
+      // Mol* owns a second React root. Defer its teardown until the parent
+      // Atlas render has committed to avoid nested synchronous unmounts.
+      window.setTimeout(() => {
+        pluginToDispose?.dispose();
+        rootToUnmount?.unmount();
+        target.remove();
+      }, 0);
     };
 
     const initialize = async () => {
