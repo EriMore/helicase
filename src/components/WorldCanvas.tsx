@@ -3,103 +3,360 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import type { SceneMode } from "@/domain/atlas";
+import type { AtlasCluster, AtlasManifest, AtlasProtein, CameraContext } from "@/domain/atlas-data";
 
-type WorldCanvasProps = { mode: SceneMode; designProgress: number };
+type WorldMetrics = { fps: number; visibleEntities: number; cameraDistance: number; heapMb: number | null };
 
-const createHelix = (radius: number, phase: number) => new THREE.CatmullRomCurve3(Array.from({ length: 80 }, (_, index) => {
-  const t = (index / 79) * Math.PI * 5;
-  return new THREE.Vector3(Math.cos(t + phase) * radius, (index - 40) * 0.07, Math.sin(t + phase) * radius);
-}));
+type WorldCanvasProps = {
+  mode: SceneMode;
+  manifest: AtlasManifest | null;
+  proteins: AtlasProtein[];
+  highlightedIds: string[];
+  selectedProteinId: string | null;
+  focusedRegionId: string | null;
+  onSelectProtein: (protein: AtlasProtein, context: CameraContext) => void;
+  onFocusCluster: (cluster: AtlasCluster) => void;
+  onHoverProtein: (protein: AtlasProtein | null) => void;
+  onMetrics: (metrics: WorldMetrics) => void;
+};
 
-export function WorldCanvas({ mode, designProgress }: WorldCanvasProps) {
+const palette: Record<string, THREE.Color> = {
+  catalysis: new THREE.Color("#75ddff"), transport: new THREE.Color("#85a9ff"), signalling: new THREE.Color("#c7a2ff"),
+  genome: new THREE.Color("#70f1cf"), expression: new THREE.Color("#b5ddff"), immunity: new THREE.Color("#ff9fc8"),
+  structure: new THREE.Color("#d8f0ff"), metabolism: new THREE.Color("#89e6a7"), membrane: new THREE.Color("#6f87d9"),
+  viral: new THREE.Color("#ffb470"), regulation: new THREE.Color("#e8cb87"), unresolved: new THREE.Color("#78869b"),
+};
+
+const pointVertex = `
+attribute float atlasSize;
+varying vec3 vColor;
+varying float vFade;
+void main() {
+  vColor = color;
+  vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+  float perspective = clamp(250.0 / max(1.0, -mvPosition.z), 0.55, 5.5);
+  gl_PointSize = atlasSize * perspective;
+  gl_Position = projectionMatrix * mvPosition;
+  vFade = smoothstep(480.0, 32.0, -mvPosition.z);
+}`;
+
+const pointFragment = `
+uniform float opacity;
+varying vec3 vColor;
+varying float vFade;
+void main() {
+  vec2 centered = gl_PointCoord - vec2(0.5);
+  float radius = length(centered);
+  if (radius > 0.5) discard;
+  float core = smoothstep(0.5, 0.04, radius);
+  float halo = smoothstep(0.5, 0.18, radius) * 0.38;
+  gl_FragColor = vec4(vColor, (core + halo) * opacity * vFade);
+}`;
+
+function makePointMaterial(opacity: number) {
+  return new THREE.ShaderMaterial({
+    vertexShader: pointVertex,
+    fragmentShader: pointFragment,
+    uniforms: { opacity: { value: opacity } },
+    transparent: true,
+    depthWrite: false,
+    vertexColors: true,
+    blending: THREE.AdditiveBlending,
+  });
+}
+
+function contextScale(distance: number): CameraContext["scale"] {
+  if (distance > 205) return "universe";
+  if (distance > 115) return "region";
+  if (distance > 42) return "cluster";
+  return "protein";
+}
+
+export function WorldCanvas({
+  mode, manifest, proteins, highlightedIds, selectedProteinId, focusedRegionId,
+  onSelectProtein, onFocusCluster, onHoverProtein, onMetrics,
+}: WorldCanvasProps) {
   const container = useRef<HTMLDivElement>(null);
-  const activeMode = useRef(mode);
-  const progress = useRef(designProgress);
-  useEffect(() => { activeMode.current = mode; }, [mode]);
-  useEffect(() => { progress.current = designProgress; }, [designProgress]);
+  const modeRef = useRef(mode);
+  const manifestRef = useRef(manifest);
+  const proteinsRef = useRef(proteins);
+  const highlightedRef = useRef(new Set(highlightedIds));
+  const selectedRef = useRef(selectedProteinId);
+  const focusedRegionRef = useRef(focusedRegionId);
+  const callbacks = useRef({ onSelectProtein, onFocusCluster, onHoverProtein, onMetrics });
+  const clusterPoints = useRef<THREE.Points | null>(null);
+  const proteinPoints = useRef<THREE.Points | null>(null);
+  const clusterIndex = useRef<AtlasCluster[]>([]);
+  const proteinIndex = useRef<AtlasProtein[]>([]);
+  const desiredPosition = useRef(new THREE.Vector3(0, 18, 270));
+  const desiredTarget = useRef(new THREE.Vector3());
+
+  useEffect(() => { modeRef.current = mode; }, [mode]);
+  useEffect(() => { manifestRef.current = manifest; }, [manifest]);
+  useEffect(() => { proteinsRef.current = proteins; }, [proteins]);
+  useEffect(() => { highlightedRef.current = new Set(highlightedIds); }, [highlightedIds]);
+  useEffect(() => { selectedRef.current = selectedProteinId; }, [selectedProteinId]);
+  useEffect(() => { focusedRegionRef.current = focusedRegionId; }, [focusedRegionId]);
+  useEffect(() => { callbacks.current = { onSelectProtein, onFocusCluster, onHoverProtein, onMetrics }; }, [onFocusCluster, onHoverProtein, onMetrics, onSelectProtein]);
+
+  useEffect(() => {
+    const points = clusterPoints.current;
+    if (!points || !manifest) return;
+    points.geometry.dispose();
+    const positions = new Float32Array(manifest.clusters.length * 3);
+    const colors = new Float32Array(manifest.clusters.length * 3);
+    const sizes = new Float32Array(manifest.clusters.length);
+    manifest.clusters.forEach((cluster, index) => {
+      positions.set(cluster.center, index * 3);
+      const color = palette[cluster.region] ?? palette.unresolved;
+      colors.set([color.r, color.g, color.b], index * 3);
+      sizes[index] = 3.4 + Math.min(12, Math.log2(cluster.count + 1) * 1.15);
+    });
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    geometry.setAttribute("atlasSize", new THREE.BufferAttribute(sizes, 1));
+    geometry.computeBoundingSphere();
+    points.geometry = geometry;
+    clusterIndex.current = manifest.clusters;
+  }, [manifest]);
+
+  useEffect(() => {
+    const points = proteinPoints.current;
+    if (!points) return;
+    points.geometry.dispose();
+    const positions = new Float32Array(proteins.length * 3);
+    const colors = new Float32Array(proteins.length * 3);
+    const sizes = new Float32Array(proteins.length);
+    const highlighted = highlightedRef.current;
+    proteins.forEach((protein, index) => {
+      positions.set(protein.position, index * 3);
+      const base = palette[protein.region] ?? palette.unresolved;
+      const isMatch = highlighted.size === 0 || highlighted.has(protein.id);
+      const color = isMatch ? base : base.clone().multiplyScalar(0.12);
+      colors.set([color.r, color.g, color.b], index * 3);
+      sizes[index] = highlighted.has(protein.id) ? 5.8 : 2.1 + Math.min(2.6, Math.log2(Math.max(16, protein.length)) * 0.25);
+    });
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    geometry.setAttribute("atlasSize", new THREE.BufferAttribute(sizes, 1));
+    geometry.computeBoundingSphere();
+    points.geometry = geometry;
+    proteinIndex.current = proteins;
+    if (highlighted.size > 0) {
+      const matches = proteins.filter((protein) => highlighted.has(protein.id));
+      if (matches.length) {
+        const centre = matches.reduce((sum, protein) => sum.add(new THREE.Vector3(...protein.position)), new THREE.Vector3()).multiplyScalar(1 / matches.length);
+        desiredTarget.current.copy(centre);
+        desiredPosition.current.copy(centre).add(new THREE.Vector3(0, 10, Math.min(115, 48 + matches.length * 0.7)));
+      }
+    }
+  }, [highlightedIds, proteins]);
+
+  useEffect(() => {
+    if (!manifest || !focusedRegionId) return;
+    const region = manifest.regions.find((candidate) => candidate.id === focusedRegionId);
+    if (!region) return;
+    desiredTarget.current.set(...region.center);
+    desiredPosition.current.set(region.center[0], region.center[1] + 8, region.center[2] + 108);
+  }, [focusedRegionId, manifest]);
+
+  useEffect(() => {
+    if (!selectedProteinId) return;
+    const protein = proteinsRef.current.find((candidate) => candidate.id === selectedProteinId);
+    if (!protein) return;
+    desiredTarget.current.set(...protein.position);
+    desiredPosition.current.set(protein.position[0], protein.position[1] + 2.5, protein.position[2] + 18);
+  }, [selectedProteinId]);
 
   useEffect(() => {
     const mount = container.current;
     if (!mount) return;
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2("#03050b", 0.021);
-    const camera = new THREE.PerspectiveCamera(47, mount.clientWidth / mount.clientHeight, 0.1, 1000);
-    camera.position.set(0, 1.8, 15);
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    scene.fog = new THREE.FogExp2("#02040a", 0.0032);
+    const camera = new THREE.PerspectiveCamera(42, mount.clientWidth / mount.clientHeight, 0.2, 1200);
+    camera.position.copy(desiredPosition.current);
+    const target = desiredTarget.current.clone();
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
     renderer.setSize(mount.clientWidth, mount.clientHeight);
-    renderer.setClearColor("#03050b", 1);
+    renderer.setClearColor("#02040a", 1);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
     mount.appendChild(renderer.domElement);
 
-    const starCount = 2600;
-    const stars = new Float32Array(starCount * 3);
-    const colors = new Float32Array(starCount * 3);
-    const palette = [new THREE.Color("#77d8ff"), new THREE.Color("#a99bff"), new THREE.Color("#f6b65b"), new THREE.Color("#eaf7ff")];
-    for (let i = 0; i < starCount; i += 1) {
-      const radius = 12 + Math.pow(Math.random(), 0.42) * 100;
-      const theta = Math.random() * Math.PI * 2;
-      const elevation = (Math.random() - 0.5) * Math.PI * 0.82;
-      stars[i * 3] = Math.cos(theta) * Math.cos(elevation) * radius;
-      stars[i * 3 + 1] = Math.sin(elevation) * radius * 0.55;
-      stars[i * 3 + 2] = Math.sin(theta) * Math.cos(elevation) * radius;
-      const color = palette[i % palette.length];
-      colors.set([color.r, color.g, color.b], i * 3);
+    const clusters = new THREE.Points(new THREE.BufferGeometry(), makePointMaterial(0.95));
+    const proteinField = new THREE.Points(new THREE.BufferGeometry(), makePointMaterial(0.78));
+    clusterPoints.current = clusters;
+    proteinPoints.current = proteinField;
+    scene.add(clusters, proteinField);
+
+    const dustGeometry = new THREE.BufferGeometry();
+    const dust = new Float32Array(1800 * 3);
+    for (let index = 0; index < 1800; index += 1) {
+      const random = Math.sin(index * 991.17) * 43758.5453;
+      const random2 = Math.sin(index * 313.91) * 21413.317;
+      const random3 = Math.sin(index * 127.73) * 9357.11;
+      dust[index * 3] = (random - Math.floor(random) - 0.5) * 700;
+      dust[index * 3 + 1] = (random2 - Math.floor(random2) - 0.5) * 420;
+      dust[index * 3 + 2] = (random3 - Math.floor(random3) - 0.5) * 700;
     }
-    const starGeometry = new THREE.BufferGeometry();
-    starGeometry.setAttribute("position", new THREE.BufferAttribute(stars, 3));
-    starGeometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-    const starMaterial = new THREE.PointsMaterial({ size: 0.24, vertexColors: true, transparent: true, opacity: 0.82, sizeAttenuation: true });
-    const starField = new THREE.Points(starGeometry, starMaterial);
-    scene.add(starField);
+    dustGeometry.setAttribute("position", new THREE.BufferAttribute(dust, 3));
+    const dustMaterial = new THREE.PointsMaterial({ color: "#6f86a7", size: 0.26, transparent: true, opacity: 0.22, depthWrite: false });
+    const dustField = new THREE.Points(dustGeometry, dustMaterial);
+    scene.add(dustField);
 
-    const molecule = new THREE.Group();
-    const structureMaterial = new THREE.MeshBasicMaterial({ color: "#87dbff", transparent: true, opacity: 0.92 });
-    const doubtMaterial = new THREE.MeshBasicMaterial({ color: "#ffb259", transparent: true, opacity: 0.68 });
-    [0, 1.8, 3.6, 5.4].forEach((phase, index) => {
-      const tube = new THREE.Mesh(new THREE.TubeGeometry(createHelix(1.55 - index * 0.16, phase), 150, 0.12, 10, false), index === 3 ? doubtMaterial : structureMaterial);
-      tube.rotation.z = (index - 1.5) * 0.38;
-      molecule.add(tube);
-    });
-    const core = new THREE.Mesh(new THREE.IcosahedronGeometry(1.12, 3), new THREE.MeshBasicMaterial({ color: "#dff7ff", wireframe: true, transparent: true, opacity: 0.32 }));
-    molecule.add(core); molecule.visible = false; scene.add(molecule);
+    const raycaster = new THREE.Raycaster();
+    raycaster.params.Points = { threshold: 2.8 };
+    const pointer = new THREE.Vector2();
+    let pointerDown = false;
+    let moved = false;
+    let startX = 0;
+    let startY = 0;
+    let lastX = 0;
+    let lastY = 0;
+    let hoveredId: string | null = null;
 
-    const designCount = 480;
-    const finalPositions = new Float32Array(designCount * 3);
-    const noisePositions = new Float32Array(designCount * 3);
-    for (let i = 0; i < designCount; i += 1) {
-      const t = i / designCount * Math.PI * 8;
-      finalPositions[i * 3] = Math.cos(t) * (0.75 + 0.18 * Math.cos(t * 3));
-      finalPositions[i * 3 + 1] = (i / designCount - 0.5) * 4.5;
-      finalPositions[i * 3 + 2] = Math.sin(t) * (0.75 + 0.18 * Math.cos(t * 3));
-      noisePositions[i * 3] = (Math.random() - 0.5) * 6;
-      noisePositions[i * 3 + 1] = (Math.random() - 0.5) * 6;
-      noisePositions[i * 3 + 2] = (Math.random() - 0.5) * 6;
-    }
-    const livePositions = new Float32Array(noisePositions);
-    const designGeometry = new THREE.BufferGeometry();
-    designGeometry.setAttribute("position", new THREE.BufferAttribute(livePositions, 3));
-    const design = new THREE.Points(designGeometry, new THREE.PointsMaterial({ color: "#aa86ff", size: 0.105, transparent: true, opacity: 0.92, blending: THREE.AdditiveBlending }));
-    design.visible = false; design.position.set(3.2, 0, 0.4); scene.add(design);
+    const updatePointer = (event: PointerEvent) => {
+      const rect = renderer.domElement.getBoundingClientRect();
+      pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    };
+    const findProtein = () => {
+      raycaster.setFromCamera(pointer, camera);
+      const distance = camera.position.distanceTo(target);
+      if (distance < 175 && proteinIndex.current.length) {
+        const hit = raycaster.intersectObject(proteinField, false)[0];
+        if (hit?.index != null) return proteinIndex.current[hit.index] ?? null;
+      }
+      return null;
+    };
+    const findCluster = () => {
+      raycaster.setFromCamera(pointer, camera);
+      const hit = raycaster.intersectObject(clusters, false)[0];
+      return hit?.index != null ? clusterIndex.current[hit.index] ?? null : null;
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      pointerDown = true; moved = false; startX = lastX = event.clientX; startY = lastY = event.clientY;
+      renderer.domElement.setPointerCapture(event.pointerId);
+    };
+    const onPointerMove = (event: PointerEvent) => {
+      updatePointer(event);
+      if (pointerDown) {
+        const dx = event.clientX - lastX; const dy = event.clientY - lastY;
+        moved ||= Math.hypot(event.clientX - startX, event.clientY - startY) > 5;
+        const distance = camera.position.distanceTo(target);
+        const scale = distance * 0.0017;
+        const right = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 0).multiplyScalar(-dx * scale);
+        const up = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 1).multiplyScalar(dy * scale);
+        desiredPosition.current.add(right).add(up);
+        desiredTarget.current.add(right).add(up);
+        lastX = event.clientX; lastY = event.clientY;
+        return;
+      }
+      const protein = findProtein();
+      const nextId = protein?.id ?? null;
+      if (nextId !== hoveredId) {
+        hoveredId = nextId;
+        callbacks.current.onHoverProtein(protein);
+        renderer.domElement.style.cursor = protein || findCluster() ? "crosshair" : "grab";
+      }
+    };
+    const onPointerUp = (event: PointerEvent) => {
+      pointerDown = false;
+      renderer.domElement.releasePointerCapture(event.pointerId);
+      if (moved) return;
+      updatePointer(event);
+      const protein = findProtein();
+      if (protein) {
+        const distance = camera.position.distanceTo(target);
+        callbacks.current.onSelectProtein(protein, {
+          position: camera.position.toArray() as [number, number, number],
+          target: target.toArray() as [number, number, number],
+          scale: contextScale(distance),
+        });
+        return;
+      }
+      const cluster = findCluster();
+      if (cluster) {
+        desiredTarget.current.set(...cluster.center);
+        desiredPosition.current.set(cluster.center[0], cluster.center[1] + 4, cluster.center[2] + Math.max(38, Math.min(82, 28 + Math.log2(cluster.count + 1) * 4)));
+        callbacks.current.onFocusCluster(cluster);
+      }
+    };
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      const offset = desiredPosition.current.clone().sub(desiredTarget.current);
+      const distance = THREE.MathUtils.clamp(offset.length() * Math.exp(event.deltaY * 0.0009), 24, 360);
+      desiredPosition.current.copy(desiredTarget.current).add(offset.normalize().multiplyScalar(distance));
+    };
+    renderer.domElement.addEventListener("pointerdown", onPointerDown);
+    renderer.domElement.addEventListener("pointermove", onPointerMove);
+    renderer.domElement.addEventListener("pointerup", onPointerUp);
+    renderer.domElement.addEventListener("wheel", onWheel, { passive: false });
 
-    const onResize = () => { camera.aspect = mount.clientWidth / mount.clientHeight; camera.updateProjectionMatrix(); renderer.setSize(mount.clientWidth, mount.clientHeight); };
+    const onResize = () => {
+      camera.aspect = mount.clientWidth / mount.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(mount.clientWidth, mount.clientHeight);
+    };
     window.addEventListener("resize", onResize);
-    const clock = new THREE.Clock(); let frame = 0;
+
+    const clock = new THREE.Timer();
+    clock.connect(document);
+    let animationFrame = 0;
+    let metricFrames = 0;
+    let metricStart = performance.now();
     const render = () => {
-      const elapsed = clock.getElapsedTime();
-      const isMap = activeMode.current === "map";
-      const isDive = activeMode.current === "diving";
-      const isXray = activeMode.current === "xray";
-      const isDesign = activeMode.current === "designing" || activeMode.current === "designComplete";
-      starField.rotation.y = elapsed * 0.008; starField.rotation.x = Math.sin(elapsed * 0.06) * 0.07; starMaterial.opacity = isMap ? 0.82 : 0.18;
-      molecule.visible = isDive; molecule.rotation.y = elapsed * 0.15; molecule.rotation.x = Math.sin(elapsed * 0.13) * 0.09;
-      molecule.scale.setScalar(isMap ? 0.001 : isDive ? 0.8 : 1); core.visible = !isXray; doubtMaterial.opacity = isXray ? 0.32 + Math.sin(elapsed * 3.3) * 0.16 : 0.68;
-      design.visible = isDesign;
-      if (isDesign) { const p = progress.current / 100; for (let i = 0; i < livePositions.length; i += 1) livePositions[i] = THREE.MathUtils.lerp(noisePositions[i], finalPositions[i], p); designGeometry.attributes.position.needsUpdate = true; design.rotation.y = -elapsed * 0.5; }
-      camera.position.z = isMap ? 15 : isDesign ? 11 : 8.4; camera.position.x = isDesign ? -1.5 : 0; camera.lookAt(isDesign ? 1.2 : 0, 0, 0);
-      renderer.render(scene, camera); frame = requestAnimationFrame(render);
+      clock.update();
+      const elapsed = clock.getElapsed();
+      const state = modeRef.current;
+      if (state === "landing") desiredPosition.current.lerp(new THREE.Vector3(0, 20, 278), 0.015);
+      if (state === "universe" && camera.position.length() > 420) desiredPosition.current.set(0, 18, 240);
+      camera.position.lerp(desiredPosition.current, state === "diving" ? 0.075 : 0.065);
+      target.lerp(desiredTarget.current, state === "diving" ? 0.09 : 0.07);
+      camera.lookAt(target);
+      const distance = camera.position.distanceTo(target);
+      const clusterOpacity = state === "structure" || state === "xray" || state === "designing" || state === "designComplete" ? 0.035 : THREE.MathUtils.smoothstep(distance, 42, 190) * 0.86 + 0.08;
+      const proteinOpacity = state === "structure" || state === "xray" || state === "designing" || state === "designComplete" ? 0.025 : (1 - THREE.MathUtils.smoothstep(distance, 95, 245)) * 0.95;
+      (clusters.material as THREE.ShaderMaterial).uniforms.opacity.value = clusterOpacity;
+      (proteinField.material as THREE.ShaderMaterial).uniforms.opacity.value = proteinOpacity;
+      clusters.rotation.y = Math.sin(elapsed * 0.025) * 0.006;
+      proteinField.rotation.y = clusters.rotation.y;
+      dustField.rotation.y = elapsed * 0.0018;
+      renderer.render(scene, camera);
+
+      metricFrames += 1;
+      const now = performance.now();
+      if (now - metricStart >= 1000) {
+        const memory = (performance as Performance & { memory?: { usedJSHeapSize: number } }).memory;
+        callbacks.current.onMetrics({
+          fps: Math.round(metricFrames * 1000 / (now - metricStart)),
+          visibleEntities: distance > 150 ? clusterIndex.current.length : proteinIndex.current.length,
+          cameraDistance: Math.round(distance),
+          heapMb: memory ? Math.round(memory.usedJSHeapSize / 1048576) : null,
+        });
+        metricFrames = 0; metricStart = now;
+      }
+      animationFrame = requestAnimationFrame(render);
     };
     render();
-    return () => { cancelAnimationFrame(frame); window.removeEventListener("resize", onResize); renderer.dispose(); starGeometry.dispose(); designGeometry.dispose(); mount.removeChild(renderer.domElement); };
+
+    return () => {
+      cancelAnimationFrame(animationFrame);
+      clock.dispose();
+      window.removeEventListener("resize", onResize);
+      renderer.domElement.removeEventListener("pointerdown", onPointerDown);
+      renderer.domElement.removeEventListener("pointermove", onPointerMove);
+      renderer.domElement.removeEventListener("pointerup", onPointerUp);
+      renderer.domElement.removeEventListener("wheel", onWheel);
+      clusters.geometry.dispose(); (clusters.material as THREE.Material).dispose();
+      proteinField.geometry.dispose(); (proteinField.material as THREE.Material).dispose();
+      dustGeometry.dispose(); dustMaterial.dispose(); renderer.dispose();
+      clusterPoints.current = null; proteinPoints.current = null;
+      if (renderer.domElement.parentElement === mount) mount.removeChild(renderer.domElement);
+    };
   }, []);
-  return <div aria-hidden="true" className="world-canvas" ref={container} />;
+
+  return <div className="world-canvas" ref={container} aria-label="Navigable spatial protein atlas" />;
 }

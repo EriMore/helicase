@@ -5,17 +5,18 @@ import { createPluginUI } from "molstar/lib/mol-plugin-ui";
 import { DefaultPluginUISpec } from "molstar/lib/mol-plugin-ui/spec";
 import { Color } from "molstar/lib/mol-util/color";
 import { createRoot, type Root } from "react-dom/client";
+import type { StructureReference } from "@/domain/atlas-data";
 
-type StructureViewProps = { active: boolean; accession: string };
+type StructureViewProps = { active: boolean; structure: StructureReference | null };
 
 const AtlasViewportControls = () => null;
 
-export function StructureView({ active, accession }: StructureViewProps) {
+export function StructureView({ active, structure: structureReference }: StructureViewProps) {
   const host = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "unavailable">("loading");
 
   useEffect(() => {
-    if (!active || !host.current) return;
+    if (!active || !host.current || !structureReference) return;
     let disposed = false;
     let plugin: Awaited<ReturnType<typeof createPluginUI>> | undefined;
     let reactRoot: Root | undefined;
@@ -75,8 +76,14 @@ export function StructureView({ active, accession }: StructureViewProps) {
             animate: { name: "off", params: {} },
           },
         });
+        const experimental = structureReference.kind === "experimental";
         const data = await plugin.builders.data.download(
-          { url: `https://models.rcsb.org/${accession.toLowerCase()}.bcif`, isBinary: true },
+          {
+            url: experimental
+              ? `https://models.rcsb.org/${structureReference.accession.toLowerCase()}.bcif`
+              : `https://alphafold.ebi.ac.uk/files/AF-${structureReference.accession}-F1-model_v6.cif`,
+            isBinary: experimental,
+          },
           { state: { isGhost: true } },
         );
         if (disposed) return;
@@ -118,11 +125,11 @@ export function StructureView({ active, accession }: StructureViewProps) {
 
     void initialize();
     return () => { disposed = true; disposeInstance(); };
-  }, [accession, active]);
+  }, [active, structureReference]);
 
-  if (!active) return null;
-  return <div className="structure-view" aria-label={`Molecular view for ${accession}`}>
+  if (!active || !structureReference) return null;
+  return <div className="structure-view" aria-label={`Molecular view for ${structureReference.accession}`}>
     <div className="structure-canvas" ref={host} />
-    <p className={`structure-status ${status}`}>{status === "ready" ? `RCSB ${accession} · Mol*` : status === "loading" ? "Loading cited structure…" : "Structure service unavailable · scene remains usable"}</p>
+    <p className={`structure-status ${status}`}>{status === "ready" ? `${structureReference.source} ${structureReference.accession} · Mol*` : status === "loading" ? "Resolving cited coordinates…" : "Structure service unavailable · universe remains navigable"}</p>
   </div>;
 }

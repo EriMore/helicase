@@ -28,3 +28,65 @@ button { cursor:pointer; }
 @keyframes breath { 50% { filter:drop-shadow(0 0 16px #86dfff); transform:scale(1.07); } } @keyframes scan { from { transform:translateX(-110%); } to { transform:translateX(210%); } }
 @media (max-width:900px) { .masthead { inset:20px; }.identity-rail { display:none; }.cold-open { left:8vw; width:70vw; }.specimen-card,.design-hud { left:7vw; }.structure-view { inset:70px 18px 180px 18px; }.copilot { width:calc(100vw - 40px); right:20px; bottom:18px; }.xray-trigger,.design-launch,.xray-note { right:20px; }.return { left:7vw; } }
 @media (prefers-reduced-motion:reduce) { *,*:before,*:after { animation-duration:.01ms!important; animation-iteration-count:1!important; scroll-behavior:auto!important; } }
+
+/* Protein universe milestone */
+.world-canvas { pointer-events:auto; transition:opacity 900ms ease,filter 900ms ease; }
+.world-canvas canvas { touch-action:none; }
+.mode-landing .world-canvas { filter:saturate(.72) brightness(.74); }
+.mode-structure .world-canvas,.mode-xray .world-canvas,.mode-designing .world-canvas,.mode-designComplete .world-canvas { opacity:.2; filter:blur(2px) saturate(.45); pointer-events:none; }
+.mode-universe .atmosphere { background:radial-gradient(ellipse at 50% 48%,transparent 0 48%,rgba(2,4,10,.07) 70%,rgba(2,4,10,.65) 100%),linear-gradient(90deg,rgba(2,4,10,.46),transparent 24%,transparent 76%,rgba(2,4,10,.36)); }
+.mode-diving .atmosphere { background:radial-gradient(circle at 50% 48%,transparent 0 26%,rgba(2,4,10,.72) 78%); }
+
+.atlas-query { position:absolute; z-index:5; left:50%; top:86px; transform:translateX(-50%); width:min(620px,50vw); display:grid; grid-template-columns:auto 1fr 44px; align-items:center; border-bottom:1px solid rgba(143,205,240,.35); background:linear-gradient(90deg,rgba(3,6,13,.15),rgba(7,14,28,.82),rgba(3,6,13,.15)); backdrop-filter:blur(12px); }
+.atlas-query>span { padding:0 16px; color:#71879c; font-size:8px; letter-spacing:.17em; white-space:nowrap; }
+.atlas-query input { width:100%; border:0; outline:0; background:transparent; padding:15px 10px; color:#e8f7ff; font-size:12px; letter-spacing:.01em; }
+.atlas-query input::placeholder { color:#607184; }
+.atlas-query button { align-self:stretch; border:0; border-left:1px solid var(--line); background:transparent; color:var(--signal-trust); font-size:18px; }
+.atlas-query:focus-within { border-bottom-color:rgba(120,216,255,.82); box-shadow:0 16px 42px rgba(0,0,0,.18); }
+
+.universe-status { position:absolute; z-index:4; left:9.8vw; bottom:45px; min-width:330px; pointer-events:none; }
+.universe-status p { margin:0 0 8px; color:#d8ecf8; font-size:10px; letter-spacing:.13em; }
+.universe-status>span { display:block; color:#677a8e; font-size:9px; letter-spacing:.05em; }
+.universe-status>div { margin-top:12px; display:flex; gap:8px; color:#4f6379; font-size:8px; letter-spacing:.12em; }
+.universe-status b { color:#87a6ba; font-weight:500; }
+
+.protein-signal { position:absolute; z-index:5; right:30px; top:155px; width:min(330px,26vw); padding:18px 19px 16px; border-left:1px solid rgba(120,216,255,.52); background:linear-gradient(90deg,rgba(5,12,24,.82),rgba(5,12,24,.2)); pointer-events:none; }
+.protein-signal span,.protein-signal small { color:#7690a6; font-size:8px; letter-spacing:.12em; text-transform:uppercase; }
+.protein-signal h2 { margin:10px 0 6px; color:#ecf9ff; font-size:21px; line-height:1.06; letter-spacing:-.035em; font-weight:400; }
+.protein-signal p { margin:0 0 10px; color:#9eb0c0; font-size:10px; }
+
+.query-readout { position:absolute; z-index:5; left:9.8vw; top:150px; width:310px; padding-left:16px; border-left:1px solid rgba(120,216,255,.36); background:linear-gradient(90deg,rgba(3,7,15,.72),transparent); }
+.query-readout>div { display:flex; align-items:center; justify-content:space-between; }
+.query-readout>div span { color:#79bdd8; font-size:8px; letter-spacing:.17em; }
+.query-readout>div button { border:0; background:transparent; color:#65798c; font-size:8px; letter-spacing:.12em; }
+.query-readout h2 { margin:14px 0 7px; font-size:23px; letter-spacing:-.04em; font-weight:400; }
+.query-readout>p { margin:0 0 13px; color:#73869a; font-size:10px; line-height:1.5; }
+.query-readout ol { list-style:none; margin:0; padding:0; }
+.query-readout li { border-top:1px solid var(--line); }
+.query-readout li button { display:grid; grid-template-columns:62px 1fr; width:100%; gap:5px 8px; padding:10px 0; border:0; background:transparent; color:#bcd0df; text-align:left; font-size:9px; line-height:1.25; }
+.query-readout li button:hover { color:white; }
+.query-readout li span { color:#77d8ff; font-family:monospace; }
+.query-readout li small { grid-column:2; color:#596e82; font-size:7px; letter-spacing:.11em; text-transform:uppercase; }
+
+.copilot-dormant { opacity:.22; transform:translateY(12px); pointer-events:none; }
+.copilot { transition:opacity 650ms ease,transform 650ms ease; }
+
+.loader { background:radial-gradient(circle at 50% 50%,#071325 0,#03050b 42%,#020309 100%); }
+.loader .loader-orbit { position:relative; width:170px; height:170px; display:grid; place-items:center; background:none; overflow:visible; }
+.loader .loader-orbit:before,.loader .loader-orbit:after { content:""; position:absolute; inset:12px; border:1px solid rgba(120,216,255,.11); border-radius:50%; animation:loader-orbit 8s linear infinite; }
+.loader .loader-orbit:after { inset:40px; border-color:rgba(174,140,255,.16); animation-direction:reverse; animation-duration:5s; }
+.loader .loader-orbit>i { position:absolute; width:4px; height:4px; border-radius:50%; background:#79d8ff; box-shadow:0 0 16px #79d8ff; animation:loader-pulse 2.2s ease-in-out infinite; }
+.loader .loader-orbit>i:nth-of-type(1) { transform:translate(71px,-15px); }
+.loader .loader-orbit>i:nth-of-type(2) { transform:translate(-42px,55px); animation-delay:.5s; }
+.loader .loader-orbit>i:nth-of-type(3) { transform:translate(-63px,-43px); animation-delay:1s; }
+.loader .loader-track { width:260px; height:1px; background:#142138; overflow:hidden; }
+.loader .loader-track>i { display:block; height:100%; min-width:8%; background:linear-gradient(90deg,#4e7791,var(--signal-trust)); box-shadow:0 0 12px var(--signal-trust); transition:width 500ms ease; animation:none; }
+.loader>small { max-width:440px; text-align:center; line-height:1.5; }
+@keyframes loader-orbit { to { transform:rotate(1turn); } }
+@keyframes loader-pulse { 50% { opacity:.35; filter:blur(1px); } }
+
+@media (max-width:1050px) {
+  .atlas-query { width:58vw; }
+  .protein-signal { width:300px; }
+  .query-readout { left:8vw; width:270px; }
+}
