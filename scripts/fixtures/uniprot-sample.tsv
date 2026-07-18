@@ -1,0 +1,14 @@
+Entry	Entry Name	Protein names	Organism	Organism (ID)	Length	Protein families	PDB
+P42212	GFP_AEQVI	Green fluorescent protein	Aequorea victoria	6100	238	GFP family	1EMA;
+P69905	HBA_HUMAN	Hemoglobin subunit alpha	Homo sapiens	9606	142	Globin family	1A3N;
+P68871	HBB_HUMAN	Hemoglobin subunit beta	Homo sapiens	9606	147	Globin family	1A3N;
+P01308	INS_HUMAN	Insulin	Homo sapiens	9606	110	Insulin family	4INS;
+P00533	EGFR_HUMAN	Epidermal growth factor receptor	Homo sapiens	9606	1210	Protein kinase superfamily	1M17;
+P0DTC2	SPIKE_SARS2	Spike glycoprotein	Severe acute respiratory syndrome coronavirus 2	2697049	1273	Coronavirus spike glycoprotein family	6VXX;
+Q99ZW2	CAS9_STRP1	CRISPR-associated endonuclease Cas9	Streptococcus pyogenes serotype M1	301447	1368	Type II CRISPR-associated protein Cas9 family	4OO8;
+P00734	THRB_HUMAN	Prothrombin	Homo sapiens	9606	622	Peptidase S1 family	1PPB;
+P02945	BACR_HALSA	Bacteriorhodopsin	Halobacterium salinarum	2242	248	Microbial rhodopsin family	1C3W;
+P0A6Z6	HSP90_ECOLI	Chaperone protein HtpG	Escherichia coli K-12	83333	624	Heat shock protein 90 family	2IOQ;
+P0A6Y8	DNAK_ECOLI	Chaperone protein DnaK	Escherichia coli K-12	83333	638	Heat shock protein 70 family	2KHO;
+P0DP23	CALM1_HUMAN	Calmodulin-1	Homo sapiens	9606	149	Calmodulin family	1CLL;
+P60709	ACTB_HUMAN	Actin, cytoplasmic 1	Homo sapiens	9606	375	Actin family	1J6Z;

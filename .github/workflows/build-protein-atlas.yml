@@ -1,0 +1,37 @@
+name: Build protein atlas index
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Maximum reviewed UniProt records (0 = complete query)"
+        required: true
+        default: "0"
+      shards:
+        description: "Number of progressive data shards"
+        required: true
+        default: "128"
+
+jobs:
+  build-atlas:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build reviewed UniProt atlas
+        run: node scripts/build-atlas.mjs --limit=${{ inputs.limit }} --shards=${{ inputs.shards }} --out=generated-atlas
+      - name: Record artifact size
+        run: |
+          du -sh generated-atlas
+          cat generated-atlas/BUILD_REPORT.json >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: helicase-protein-atlas-${{ github.run_id }}
+          path: generated-atlas
+          compression-level: 9
+          retention-days: 14

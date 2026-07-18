@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build --webpack",
     "start": "next start",
+    "atlas:build": "node scripts/build-atlas.mjs",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit"
   },
