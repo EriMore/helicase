@@ -1,8 +1,29 @@
 # Helicase Atlas
 
-Helicase Atlas is a browser-native instrument for exploring protein space as a navigable night sky, diving into real molecular structures, making uncertainty visible, and using GPT-5.6 to reason over and pilot the scene.
+Helicase Atlas is a browser-native instrument for exploring protein space as a navigable night sky, making uncertainty visible, and using GPT-5.6 to reason over and pilot the scene.
 
-This repository currently contains the founding architecture and product constitution. The implementation begins only after this foundation is reviewed.
+## Run locally
+
+```bash
+npm install
+npm run dev
+```
+
+Open `http://localhost:3000`.
+
+Set `OPENAI_API_KEY` to enable the server-side Responses API route. Without it, the copilot uses an explicitly labelled local interaction fallback so the scene remains demonstrable.
+
+## Current implementation
+
+- Cinematic loading sequence, staged density field, cited-structure transition, and interruption path.
+- Strict domain commands shared by direct controls and the copilot route.
+- Canonical brand assets are derived into `public/brand/logo/` without modification.
+- A client-only Mol* adapter loads the cited RCSB BinaryCIF structure for PDB 1EMA. This experimental structure has no pLDDT confidence, so Confidence X-Ray remains unavailable until a verified predicted fixture is imported.
+- The current design reveal is a clearly marked choreography fixture. It is **not** a scientific result; it will be replaced only by verified offline RFdiffusion → ProteinMPNN → Boltz-2 trajectory data with provenance and predicted-not-validated scores.
+
+## Architecture
+
+The product and engineering constitution remains under [`docs/`](docs/). Start with the [canonical MVP dossier](docs/product/Helicase_Atlas_BuildWeek_Dossier.md), then [architecture](docs/architecture/ARCHITECTURE.md) and [design system](docs/design/DESIGN_SYSTEM.md).
 
 ## Start here
 
@@ -16,7 +37,7 @@ This repository currently contains the founding architecture and product constit
 
 ## Current status
 
-The repository is intentionally documentation-only. No application scaffold, dependency installation, generated data, or placeholder UI is part of the founding architecture PR.
+The first runnable Atlas slice is now implemented. The density field and design choreography remain explicitly labelled fixtures until verified atlas data is imported.
 
 ## Product thesis
 
