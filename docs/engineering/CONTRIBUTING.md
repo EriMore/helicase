@@ -2,7 +2,7 @@
 
 ## Before changing code or content
 
-Read [PRINCIPLES.md](PRINCIPLES.md), [ENGINEERING_PRINCIPLES.md](ENGINEERING_PRINCIPLES.md), [DESIGN_PRINCIPLES.md](DESIGN_PRINCIPLES.md), and the relevant architecture document.
+Read [Principles](../decisions/PRINCIPLES.md), [Engineering principles](ENGINEERING_PRINCIPLES.md), [Design principles](../design/DESIGN_PRINCIPLES.md), and the relevant architecture document.
 
 ## Change expectations
 
@@ -11,7 +11,7 @@ Read [PRINCIPLES.md](PRINCIPLES.md), [ENGINEERING_PRINCIPLES.md](ENGINEERING_PRI
 - Keep scientific claims traceable to data or clearly labelled as hypotheses.
 - Add tests for domain behavior and deterministic fixtures.
 - Validate motion and accessibility when changing interaction behavior.
-- Update [DECISIONS.md](DECISIONS.md) when a change alters a core contract.
+- Update [DECISIONS.md](../decisions/DECISIONS.md) when a change alters a core contract.
 
 ## Pull requests
 
