@@ -41,3 +41,30 @@ jobs:
           path: generated-atlas
           compression-level: 9
           retention-days: 14
+
+  publish-browser-atlas:
+    if: github.event_name == 'push' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/protein-universe
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build measured browser delivery profile
+        run: node scripts/build-atlas.mjs --limit=75000 --shards=64 --out=public/data/atlas
+      - name: Record live payload size
+        run: |
+          du -sh public/data/atlas
+          cat public/data/atlas/BUILD_REPORT.json >> "$GITHUB_STEP_SUMMARY"
+      - name: Commit browser atlas
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/data/atlas
+          git diff --cached --quiet || git commit -m "Publish 75k-protein browser atlas"
+          git push origin HEAD:agent/protein-universe

@@ -38,4 +38,5 @@ coverage/
 # Temporary local data
 tmp/
 temp/
+.atlas-artifacts/
 
