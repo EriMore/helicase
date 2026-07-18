@@ -91,7 +91,7 @@ export function WorldCanvas({ mode, designProgress }: WorldCanvasProps) {
       const isXray = activeMode.current === "xray";
       const isDesign = activeMode.current === "designing" || activeMode.current === "designComplete";
       starField.rotation.y = elapsed * 0.008; starField.rotation.x = Math.sin(elapsed * 0.06) * 0.07; starMaterial.opacity = isMap ? 0.82 : 0.18;
-      molecule.visible = !isMap || isDive; molecule.rotation.y = elapsed * 0.15; molecule.rotation.x = Math.sin(elapsed * 0.13) * 0.09;
+      molecule.visible = isDive; molecule.rotation.y = elapsed * 0.15; molecule.rotation.x = Math.sin(elapsed * 0.13) * 0.09;
       molecule.scale.setScalar(isMap ? 0.001 : isDive ? 0.8 : 1); core.visible = !isXray; doubtMaterial.opacity = isXray ? 0.32 + Math.sin(elapsed * 3.3) * 0.16 : 0.68;
       design.visible = isDesign;
       if (isDesign) { const p = progress.current / 100; for (let i = 0; i < livePositions.length; i += 1) livePositions[i] = THREE.MathUtils.lerp(noisePositions[i], finalPositions[i], p); designGeometry.attributes.position.needsUpdate = true; design.rotation.y = -elapsed * 0.5; }

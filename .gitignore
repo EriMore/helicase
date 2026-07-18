@@ -29,6 +29,7 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+*.tsbuildinfo
 
 # Test and coverage output
 coverage/
