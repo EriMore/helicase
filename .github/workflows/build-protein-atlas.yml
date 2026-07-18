@@ -1,6 +1,12 @@
 name: Build protein atlas index
 
 on:
+  push:
+    branches:
+      - agent/protein-universe
+    paths:
+      - scripts/build-atlas.mjs
+      - .github/workflows/build-protein-atlas.yml
   workflow_dispatch:
     inputs:
       limit:
@@ -24,7 +30,7 @@ jobs:
         with:
           node-version: 22
       - name: Build reviewed UniProt atlas
-        run: node scripts/build-atlas.mjs --limit=${{ inputs.limit }} --shards=${{ inputs.shards }} --out=generated-atlas
+        run: node scripts/build-atlas.mjs --limit=${{ inputs.limit || '0' }} --shards=${{ inputs.shards || '128' }} --out=generated-atlas
       - name: Record artifact size
         run: |
           du -sh generated-atlas
