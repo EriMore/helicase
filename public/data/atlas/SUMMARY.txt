@@ -1,0 +1,4 @@
+Helicase Atlas index
+75,000 proteins
+19,451 annotation families
+22,429 PDB-linked entries

@@ -1,0 +1,10 @@
+{
+  "generatedAt": "2026-07-18T19:12:05.518Z",
+  "records": 75000,
+  "clusters": 19451,
+  "shards": 64,
+  "bytes": 32050969,
+  "sourceRelease": "2026_02",
+  "completeSourceQuery": false,
+  "inputFixture": false
+}
