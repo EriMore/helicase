@@ -41,7 +41,9 @@ The renderer never attempts to instantiate molecular geometry for universe entit
 
 On 18 July 2026, direct requests to `rest.uniprot.org` were attempted from both the local shell and the application browser. Both failed before HTTP negotiation with `ERR_NAME_NOT_RESOLVED` / `Could not resolve host`. This is an environment DNS restriction, not an API, schema, memory, or rendering failure.
 
-The full build therefore runs through the manually dispatched GitHub Actions workflow, where the output is retained as an artifact and measured before selecting a live deployment derivative. No generated density field may be described as a protein corpus while the artifact is unavailable.
+The full build therefore runs in GitHub Actions, where the output is retained as an artifact and measured before selecting a live deployment derivative. The first unrestricted run completed in 131 seconds and indexed 575,503 reviewed proteins, 55,558 annotation families, and 39,017 PDB-linked entries. Its static output measured 241 MB uncompressed and 38,661,970 bytes as a level-nine compressed artifact.
+
+The live browser profile is a deterministic 75,000-record prefix of that same reviewed UniProt query: 19,451 annotation families, 22,429 PDB-linked records, 64 progressive shards, and 34 MB uncompressed. The measured 241 MB full payload would impose unnecessary initial transfer, parse, and browser-memory pressure for a static Build Week deployment. This derivative is therefore a delivery profile—not a hand-authored fixture—and it uses the same manifest, shard, provenance, search, rendering, and structure-resolution contracts as the full corpus.
 
 ## Provenance
 

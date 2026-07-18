@@ -46,6 +46,26 @@ The references were inspected through their publicly accessible pages and indexe
 
 **Do not copy:** the specific brand treatment, spaced wordmark, or claim language.
 
+## AIR Business Center
+
+**Exceptional:** establishes monumentality through vertical rhythm, architectural scale, restrained material language, and progressive disclosure. Its information hierarchy lets a large spatial proposition feel coherent rather than crowded.
+
+**Use for Helicase:** communicate scale through relative motion and quiet landmarks. Region names, protein counts, and the current camera depth should orient without flattening the universe into navigation chrome.
+
+**Do not copy:** luxury-property visual codes, sales interactions, or monumental scale without informational meaning.
+
+**Limitation:** indexed structure and media were inspectable, but the live WebGL timing and device-specific transitions were not fully available in the research environment.
+
+## Wembi
+
+**Exceptional:** frames a complex digital-twin system through numbered chapters and a direct what/how/why progression. It repeatedly connects representation to real-time state, prediction, and control.
+
+**Use for Helicase:** make every scene transformation answer what changed, why it changed, and what evidence supports it. Typed AI commands should visibly operate the same scientific scene as direct manipulation.
+
+**Do not copy:** dashboard framing, generic real-time telemetry language, or numbered sections as permanent application navigation.
+
+**Limitation:** page structure and content were inspectable; detailed transition easing and responsive behavior were not fully observable.
+
 ## Cross-reference patterns
 
 ### Shared strengths
