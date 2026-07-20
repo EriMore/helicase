@@ -1,0 +1,1154 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,300;0,400;0,500;0,600;1,400;1,500&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#0d1013}
+  body{font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+  a{color:var(--teal)} a:hover{color:var(--ink)}
+  input{font-family:inherit}
+  ::selection{background:rgba(12,140,120,.22)}
+  button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+  @keyframes hx-rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes hx-fade{from{opacity:0}to{opacity:1}}
+  @keyframes hx-breathe{0%,100%{opacity:.5}50%{opacity:1}}
+  @keyframes hx-scan{0%{transform:translateY(-100%)}100%{transform:translateY(1200%)}}
+  .hx-glass{background:var(--glass);-webkit-backdrop-filter:blur(16px) saturate(1.2);backdrop-filter:blur(16px) saturate(1.2);border:1px solid var(--glass-brd)}
+  .hx-res{cursor:text;transition:background .1s}
+  .hx-res.sel{background:var(--teal);color:#fff}
+  .hx-lvl:hover .hx-lvl-lab{color:var(--ink)!important}
+  ::-webkit-scrollbar{height:7px;width:7px}
+  ::-webkit-scrollbar-thumb{background:var(--glass-brd);border-radius:4px}
+</style>
+<script src="https://unpkg.com/three@0.150.1/build/three.min.js"></script>
+</helmet>
+<div style="{{ rootStyle }}" data-screen-label="Helicase Atlas">
+  <canvas ref="{{ canvasRef }}" style="position:absolute;inset:0;width:100%;height:100%;display:block"></canvas>
+  <div ref="{{ labelsRef }}" style="position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:6"></div>
+
+  <!-- OCCLUSION SCRIMS -->
+  <div style="position:absolute;top:0;left:0;right:0;height:150px;pointer-events:none;background:var(--scrim-top);z-index:8"></div>
+  <div style="position:absolute;bottom:0;left:0;right:0;height:120px;pointer-events:none;background:var(--scrim-bot);z-index:8"></div>
+  <div style="position:absolute;inset:0;pointer-events:none;background:var(--vignette);z-index:7"></div>
+
+  <!-- GLOBAL NAV -->
+  <header style="position:absolute;top:18px;left:26px;right:26px;height:46px;display:flex;align-items:center;justify-content:space-between;pointer-events:none;z-index:30">
+    <div class="hx-glass" style="display: flex; align-items: center; gap: 15px; padding: 9px 16px; pointer-events: auto; border-radius: 3px; overflow: visible; border-style: solid; border-width: 0.8px">
+      <img src="{{ markSrc }}" alt="Helicase" style="height:28px;width:28px;object-fit:contain;cursor:pointer" onClick="{{ onHome }}">
+      <img src="{{ wordSrc }}" alt="HELICASE" style="height:12px;width:auto;object-fit:contain">
+    </div>
+    <div class="hx-glass" style="display:flex;align-items:center;gap:2px;padding:6px 8px;pointer-events:auto;border-radius:3px">
+      <span style="display:flex;align-items:center;gap:8px;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.2em;color:var(--ink-soft);padding:6px 12px"><span style="width:5px;height:5px;border-radius:50%;background:{{ statusDot }};box-shadow:0 0 8px {{ statusDot }}"></span>{{ statusText }}</span>
+      <button onClick="{{ onToggleSound }}" title="Sound" style="all:unset;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.16em;color:var(--ink-soft);padding:8px 12px">{{ soundLabel }}</button>
+      <button onClick="{{ onToggleTheme }}" style="all:unset;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.18em;color:var(--ink);padding:8px 13px;border:1px solid var(--glass-brd);border-radius:2px">{{ themeLabel }}</button>
+    </div>
+  </header>
+
+  <!-- DEPTH RAIL (orientation + spatial return) -->
+  <nav aria-label="Spatial depth" class="hx-glass" style="position:absolute;left:26px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:2px;z-index:20;padding:12px 12px;border-radius:3px;opacity:{{ railOpacity }};transition:opacity .5s;pointer-events:auto">
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:8.5px;letter-spacing:.28em;color:var(--ink-faint);margin:0 4px 8px">DEPTH</div>
+    <sc-for list="{{ levels }}" as="lv" hint-placeholder-count="5">
+      <div class="hx-lvl" role="button" tabindex="0" onClick="{{ lv.go }}" style="display:flex;align-items:flex-start;gap:9px;padding:6px 5px;cursor:{{ lv.cursor }};min-height:26px">
+        <span style="display:flex;flex-direction:column;align-items:center;padding-top:3px">
+          <span style="width:7px;height:7px;border-radius:50%;background:{{ lv.dot }};border:1px solid {{ lv.ring }};transition:all .4s;flex:none"></span>
+        </span>
+        <span style="display:flex;flex-direction:column;gap:1px;min-width:0">
+          <span class="hx-lvl-lab" style="font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.2em;color:{{ lv.color }};transition:color .3s;white-space:nowrap">{{ lv.label }}</span>
+          <span style="font-family:Spectral,serif;font-style:italic;font-size:11px;color:var(--teal);white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis;display:{{ lv.subDisplay }}">{{ lv.sub }}</span>
+        </span>
+      </div>
+    </sc-for>
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:8px;letter-spacing:.14em;color:var(--ink-faint);margin:8px 4px 0;line-height:1.5">{{ railHint }}</div>
+  </nav>
+
+  <!-- QUERY (deterministic search) -->
+  <sc-if value="{{ showQuery }}" hint-placeholder-val="{{ true }}">
+    <div style="position:absolute;top:78px;left:50%;transform:translateX(-50%);width:min(660px,66vw);z-index:22;animation:hx-rise .5s ease both">
+      <div class="hx-glass" style="border-radius:3px;padding:11px 16px">
+        <div style="display:flex;align-items:center;gap:14px">
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.26em;color:var(--ink-soft);white-space:nowrap">QUERY</span>
+          <input ref="{{ searchRef }}" value="{{ query }}" onInput="{{ onQueryInput }}" onKeyDown="{{ onQueryKey }}" placeholder="name · accession · organism · family · function · domain…" style="all:unset;flex:1;font-family:Spectral,serif;font-size:16px;color:var(--ink);caret-color:var(--teal)">
+          <sc-if value="{{ queryActive }}" hint-placeholder-val="{{ false }}">
+            <button onClick="{{ onClearQuery }}" style="all:unset;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.14em;color:var(--ink-soft);border:1px solid var(--glass-brd);padding:5px 9px;border-radius:2px">CLEAR ✕</button>
+          </sc-if>
+          <button onClick="{{ onQuerySubmit }}" title="Search" style="all:unset;cursor:pointer;color:var(--teal);font-size:15px;transform:rotate(-45deg);padding:0 4px">↑</button>
+        </div>
+        <sc-if value="{{ queryActive }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;align-items:center;gap:10px;margin-top:10px;padding-top:10px;border-top:1px solid var(--glass-brd);flex-wrap:wrap">
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.1em;color:var(--teal)">{{ queryCount }}</span>
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.06em;color:var(--ink-faint)">FILTER</span>
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.06em;color:var(--ink);border:1px solid var(--teal);padding:3px 8px;border-radius:2px">{{ queryFilter }}</span>
+          </div>
+        </sc-if>
+      </div>
+      <sc-if value="{{ showSuggest }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex;gap:8px;margin-top:11px;flex-wrap:wrap;justify-content:center">
+          <sc-for list="{{ suggestions }}" as="s" hint-placeholder-count="4">
+            <button onClick="{{ s.run }}" class="hx-glass" style="cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.08em;color:var(--ink-soft);padding:6px 11px;border-radius:2px">{{ s.label }}</button>
+          </sc-for>
+        </div>
+      </sc-if>
+    </div>
+  </sc-if>
+
+  <!-- IDENTITY PANEL (Glance / Learn) -->
+  <sc-if value="{{ hasSelection }}" hint-placeholder-val="{{ false }}">
+    <div class="hx-glass" style="position: absolute; left: 201px; top: 76px; width: min(380px,34vw); max-height: calc(100vh - 180px); overflow-y: auto; z-index: 22; border-radius: 3px; padding: 22px 24px; animation: hx-rise .55s ease both">
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.24em;color:var(--ink-soft)">{{ sel.id }}</span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.14em;color:var(--ink-faint)">{{ sel.gene }}</span>
+      </div>
+      <h1 style="font-family:Spectral,serif;font-weight:400;font-size:30px;line-height:1.1;letter-spacing:-.01em;color:var(--ink);margin:12px 0 6px;text-wrap:pretty">{{ sel.name }}</h1>
+      <div style="font-family:Spectral,serif;font-style:italic;font-size:14px;color:var(--ink-soft);margin-bottom:16px">{{ sel.organism }}</div>
+      <div style="display:inline-flex;align-items:center;gap:8px;border:1px solid {{ sel.evTint }};padding:5px 10px;border-radius:2px;margin-bottom:18px">
+        <span style="width:6px;height:6px;background:{{ sel.evTint }};border-radius:{{ sel.evRadius }}"></span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.14em;color:var(--ink);white-space:nowrap">{{ sel.evidence }}</span>
+      </div>
+
+      <!-- tabs -->
+      <div style="display:flex;gap:0;border-bottom:1px solid var(--glass-brd);margin-bottom:14px">
+        <button onClick="{{ onGlance }}" style="all:unset;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.18em;color:{{ glanceColor }};padding:8px 12px 9px;border-bottom:2px solid {{ glanceBorder }};margin-bottom:-1px">GLANCE</button>
+        <button onClick="{{ onLearn }}" style="all:unset;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.18em;color:{{ learnColor }};padding:8px 12px 9px;border-bottom:2px solid {{ learnBorder }};margin-bottom:-1px">LEARN</button>
+      </div>
+
+      <!-- GLANCE -->
+      <sc-if value="{{ tierGlance }}" hint-placeholder-val="{{ true }}">
+        <div style="animation:hx-fade .3s ease both">
+          <div style="display:flex;flex-direction:column;gap:0;margin-bottom:16px">
+            <sc-for list="{{ sel.rows }}" as="r" hint-placeholder-count="4">
+              <div style="display:flex;justify-content:space-between;gap:18px;padding:9px 0;border-top:1px solid var(--line)">
+                <span style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.16em;color:var(--ink-soft);padding-top:2px;white-space:nowrap">{{ r.k }}</span>
+                <span style="font-family:Spectral,serif;font-size:14px;color:var(--ink);text-align:right">{{ r.v }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <p style="font-family:Spectral,serif;font-size:15px;line-height:1.55;color:var(--ink);margin:0;text-wrap:pretty">{{ sel.functionShort }}</p>
+          <p style="font-family:Spectral,serif;font-size:14.5px;line-height:1.55;color:var(--ink);margin:16px 0 0;text-wrap:pretty;border-left:2px solid var(--teal);padding-left:14px">{{ sel.fact }}</p>
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.03em;color:var(--ink-faint);margin-top:14px;line-height:1.6">{{ sel.source }}</div>
+        </div>
+      </sc-if>
+
+      <!-- LEARN -->
+      <sc-if value="{{ tierLearn }}" hint-placeholder-val="{{ false }}">
+        <div style="animation:hx-fade .3s ease both">
+          <p style="font-family:Spectral,serif;font-size:14.5px;line-height:1.6;color:var(--ink);margin:0 0 16px;text-wrap:pretty">{{ sel.functionLong }}</p>
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <sc-for list="{{ sel.learnRows }}" as="r" hint-placeholder-count="4">
+              <div>
+                <div style="font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.2em;color:var(--ink-soft);margin-bottom:3px">{{ r.k }}</div>
+                <div style="font-family:Spectral,serif;font-size:13.5px;line-height:1.5;color:var(--ink);text-wrap:pretty">{{ r.v }}</div>
+              </div>
+            </sc-for>
+          </div>
+          <!-- domains -->
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.2em;color:var(--ink-soft);margin:18px 0 8px">DOMAINS</div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <sc-for list="{{ sel.domainList }}" as="d" hint-placeholder-count="3">
+              <div style="display:flex;align-items:center;gap:9px">
+                <span style="width:10px;height:10px;background:{{ d.color }};flex:none;border-radius:1px"></span>
+                <span style="font-family:Spectral,serif;font-size:13px;color:var(--ink);flex:1">{{ d.label }}</span>
+                <span style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;color:var(--ink-faint)">{{ d.range }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <!-- references -->
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.2em;color:var(--ink-soft);margin:18px 0 8px">REFERENCES</div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <sc-for list="{{ sel.refs }}" as="c" hint-placeholder-count="2">
+              <div style="font-family:Spectral,serif;font-size:12.5px;font-style:italic;color:var(--ink-soft);line-height:1.4">{{ c }}</div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- THREADS -->
+      <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--glass-brd)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.2em;color:var(--ink-soft)">RELATIONSHIP THREADS</span>
+          <button onClick="{{ onToggleThreads }}" style="all:unset;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.1em;color:{{ threadsColor }};border:1px solid {{ threadsBorder }};padding:4px 8px;border-radius:2px">{{ threadsLabel }}</button>
+        </div>
+        <sc-if value="{{ showThreadsList }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:2px">
+            <sc-for list="{{ sel.threads }}" as="t" hint-placeholder-count="3">
+              <div onMouseEnter="{{ t.hover }}" onMouseLeave="{{ t.unhover }}" style="display:flex;flex-direction:column;gap:2px;padding:8px 9px;border-radius:2px;cursor:default;background:{{ t.bg }}">
+                <div style="display:flex;align-items:center;gap:8px">
+                  <span style="width:16px;height:2px;background:{{ t.color }};flex:none"></span>
+                  <span style="font-family:Spectral,serif;font-size:13px;color:var(--ink);flex:1">{{ t.name }}</span>
+                  <span style="font-family:'IBM Plex Mono',monospace;font-size:8.5px;color:var(--ink-faint)">{{ t.acc }}</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;padding-left:24px">
+                  <span style="font-family:'IBM Plex Mono',monospace;font-size:8.5px;letter-spacing:.08em;color:{{ t.color }}">{{ t.type }}</span>
+                  <span style="font-family:'IBM Plex Mono',monospace;font-size:8.5px;color:var(--ink-faint)">{{ t.statusTag }}</span>
+                </div>
+                <div style="font-family:Spectral,serif;font-size:11.5px;font-style:italic;color:var(--ink-soft);padding-left:24px;line-height:1.4">{{ t.basis }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+      </div>
+
+      <!-- ACTIONS -->
+      <div style="display:flex;flex-wrap:wrap;gap:9px;margin-top:22px">
+        <sc-if value="{{ showInspectBtn }}" hint-placeholder-val="{{ false }}">
+          <button onClick="{{ onInspect }}" style="all:unset;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.14em;color:var(--on-accent);background:var(--ink);padding:11px 15px;border-radius:2px">INSPECT STRUCTURE →</button>
+        </sc-if>
+        <button onClick="{{ onOpenSeq }}" style="all:unset;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.14em;color:var(--ink);border:1px solid var(--glass-brd);padding:11px 15px;border-radius:2px">SEQUENCE</button>
+        <sc-if value="{{ canDesign }}" hint-placeholder-val="{{ false }}">
+          <button onClick="{{ onStartDesign }}" style="all:unset;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.14em;color:var(--teal);border:1px solid var(--teal);padding:11px 15px;border-radius:2px">DESIGN FROM THIS →</button>
+        </sc-if>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- INSPECT CONTROLS (right) -->
+  <sc-if value="{{ isInspect }}" hint-placeholder-val="{{ false }}">
+    <div class="hx-glass" style="position:absolute;right:26px;top:88px;width:min(300px,28vw);z-index:22;display:flex;flex-direction:column;gap:16px;border-radius:3px;padding:18px 18px;animation:hx-rise .55s ease both">
+      <div style="border:1px solid {{ confBorder }};padding:12px 13px;border-radius:2px">
+        <div style="display:flex;align-items:center;gap:9px">
+          <span style="font-size:12px;color:{{ confIcon }}">◇</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.1em;color:var(--ink);line-height:1.4">{{ confLabel }}</span>
+        </div>
+        <sc-if value="{{ sel.predicted }}" hint-placeholder-val="{{ false }}">
+          <button onClick="{{ onToggleConfidence }}" style="all:unset;cursor:pointer;margin-top:11px;font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.1em;color:{{ confBtnColor }};border:1px solid {{ confBtnBorder }};padding:7px 11px;display:inline-block;border-radius:2px">{{ confBtnLabel }}</button>
+        </sc-if>
+        <sc-if value="{{ showConfLegend }}" hint-placeholder-val="{{ false }}">
+          <div style="margin-top:11px">
+            <div style="height:6px;border-radius:1px;background:linear-gradient(90deg,#e8622a,#e8a93a,#5fc7d6,#2e6fe0)"></div>
+            <div style="display:flex;justify-content:space-between;font-family:'IBM Plex Mono',monospace;font-size:8px;color:var(--ink-faint);margin-top:4px"><span>LOW · 0</span><span>pLDDT</span><span>100 · HIGH</span></div>
+          </div>
+        </sc-if>
+      </div>
+      <div style="border:1px solid var(--line);padding:13px 13px;border-radius:2px">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.2em;color:var(--ink-soft);margin-bottom:11px">REPRESENTATION</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          <sc-for list="{{ reps }}" as="rp" hint-placeholder-count="4">
+            <button onClick="{{ rp.set }}" style="all:unset;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.08em;padding:7px 10px;border:1px solid {{ rp.border }};color:{{ rp.color }};background:{{ rp.bg }};border-radius:2px">{{ rp.label }}</button>
+          </sc-for>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
+          <button onClick="{{ onToggleLigands }}" style="all:unset;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.08em;padding:7px 10px;border:1px solid {{ ligBorder }};color:{{ ligColor }};background:{{ ligBg }};border-radius:2px">LIGANDS {{ ligState }}</button>
+          <button onClick="{{ onColorMode }}" style="all:unset;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.08em;padding:7px 10px;border:1px solid var(--glass-brd);color:var(--ink);border-radius:2px">COLOR · {{ colorModeLabel }}</button>
+        </div>
+      </div>
+      <div style="border:1px solid var(--line);padding:13px 13px;border-radius:2px">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.2em;color:var(--ink-soft);margin-bottom:8px">STRUCTURE</div>
+        <div style="display:flex;flex-direction:column;gap:0">
+          <sc-for list="{{ structRows }}" as="r" hint-placeholder-count="3">
+            <div style="display:flex;justify-content:space-between;gap:12px;padding:5px 0;border-top:1px solid var(--line)">
+              <span style="font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.1em;color:var(--ink-soft)">{{ r.k }}</span>
+              <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--ink);text-align:right">{{ r.v }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:8.5px;color:var(--ink-faint);margin-top:9px;line-height:1.5">{{ molNote }}</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button onClick="{{ onOpenSeq }}" style="all:unset;cursor:pointer;flex:1;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.12em;color:var(--ink);border:1px solid var(--glass-brd);padding:9px;border-radius:2px">{{ seqBtnLabel }}</button>
+        <sc-if value="{{ canDesign }}" hint-placeholder-val="{{ false }}">
+          <button onClick="{{ onStartDesign }}" style="all:unset;cursor:pointer;flex:1;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.12em;color:var(--teal);border:1px solid var(--teal);padding:9px;border-radius:2px">DESIGN →</button>
+        </sc-if>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- DESIGN JOURNEY (right) -->
+  <sc-if value="{{ isDesign }}" hint-placeholder-val="{{ false }}">
+    <div class="hx-glass" style="position:absolute;right:26px;top:88px;width:min(340px,32vw);max-height:calc(100vh - 180px);overflow-y:auto;z-index:23;border-radius:3px;padding:20px 20px;animation:hx-rise .5s ease both">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.24em;color:var(--teal)">DESIGN TRAJECTORY</span>
+        <button onClick="{{ onExitDesign }}" style="all:unset;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.1em;color:var(--ink-soft)">EXIT ✕</button>
+      </div>
+      <div style="font-family:Spectral,serif;font-size:16px;color:var(--ink);margin-bottom:16px">From {{ sel.name }}</div>
+      <!-- stage timeline -->
+      <div style="display:flex;flex-direction:column;gap:0;margin-bottom:16px">
+        <sc-for list="{{ designStages }}" as="st" hint-placeholder-count="6">
+          <div style="display:flex;align-items:center;gap:11px;padding:5px 0">
+            <span style="width:8px;height:8px;border-radius:50%;background:{{ st.dot }};border:1px solid {{ st.ring }};flex:none"></span>
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.14em;color:{{ st.color }}">{{ st.label }}</span>
+          </div>
+        </sc-for>
+      </div>
+      <div style="border-top:1px solid var(--glass-brd);padding-top:14px">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.2em;color:var(--ink-soft);margin-bottom:6px">{{ designStageTag }}</div>
+        <p style="font-family:Spectral,serif;font-size:14px;line-height:1.55;color:var(--ink);margin:0 0 12px;text-wrap:pretty">{{ designStageBody }}</p>
+        <sc-if value="{{ showDesignMetrics }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:0;margin-bottom:12px">
+            <sc-for list="{{ designMetrics }}" as="m" hint-placeholder-count="4">
+              <div style="display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-top:1px solid var(--line)">
+                <span style="font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.08em;color:var(--ink-soft)">{{ m.k }}</span>
+                <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:{{ m.color }};text-align:right">{{ m.v }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+        <sc-if value="{{ showCompare }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;gap:8px;margin-bottom:12px">
+            <sc-for list="{{ candidates }}" as="c" hint-placeholder-count="2">
+              <button onClick="{{ c.pick }}" style="all:unset;cursor:pointer;flex:1;border:1px solid {{ c.border }};padding:10px;border-radius:2px;background:{{ c.bg }}">
+                <div style="font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.14em;color:{{ c.head }};margin-bottom:6px">{{ c.name }}</div>
+                <div style="font-family:'IBM Plex Mono',monospace;font-size:8.5px;color:var(--ink-soft);line-height:1.6">{{ c.metrics }}</div>
+              </button>
+            </sc-for>
+          </div>
+        </sc-if>
+      </div>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:8.5px;letter-spacing:.05em;color:var(--ink-faint);margin:6px 0 14px;line-height:1.5;border-left:1px solid var(--glass-brd);padding-left:10px">{{ designProvenance }}</div>
+      <div style="display:flex;gap:8px">
+        <button onClick="{{ onDesignBack }}" style="all:unset;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.12em;color:var(--ink-soft);border:1px solid var(--glass-brd);padding:10px 13px;border-radius:2px">← BACK</button>
+        <button onClick="{{ onDesignNext }}" style="all:unset;cursor:pointer;flex:1;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.12em;color:var(--on-accent);background:var(--teal);padding:10px 13px;border-radius:2px">{{ designNextLabel }}</button>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- SEQUENCE TRAY -->
+  <sc-if value="{{ seqOpen }}" hint-placeholder-val="{{ false }}">
+    <div class="hx-glass" style="position:absolute;left:26px;right:26px;bottom:26px;z-index:24;border-radius:3px;padding:14px 18px 16px;animation:hx-rise .4s ease both">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.22em;color:var(--ink-soft)">SEQUENCE</span>
+          <span style="font-family:Spectral,serif;font-size:14px;color:var(--ink)">{{ sel.name }}</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;color:var(--ink-faint)">{{ seqMeta }}</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.08em;color:{{ seqTagColor }};border:1px solid {{ seqTagColor }};padding:2px 7px;border-radius:2px">{{ seqTag }}</span>
+        </div>
+        <button onClick="{{ onCloseSeq }}" style="all:unset;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.1em;color:var(--ink-soft)">CLOSE ✕</button>
+      </div>
+      <div ref="{{ seqRef }}" style="max-height:190px;overflow-y:auto"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:9px;padding-top:9px;border-top:1px solid var(--glass-brd);flex-wrap:wrap;gap:10px">
+        <div style="display:flex;gap:16px;flex-wrap:wrap">
+          <span style="display:flex;align-items:center;gap:6px;font-family:'IBM Plex Mono',monospace;font-size:8.5px;letter-spacing:.06em;color:var(--ink-faint)"><span style="width:10px;height:3px;background:var(--ss-h)"></span>HELIX</span>
+          <span style="display:flex;align-items:center;gap:6px;font-family:'IBM Plex Mono',monospace;font-size:8.5px;letter-spacing:.06em;color:var(--ink-faint)"><span style="width:10px;height:3px;background:var(--ss-e)"></span>STRAND</span>
+          <span style="display:flex;align-items:center;gap:6px;font-family:'IBM Plex Mono',monospace;font-size:8.5px;letter-spacing:.06em;color:var(--ink-faint)"><span style="width:10px;height:3px;background:var(--ss-c)"></span>COIL</span>
+        </div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.06em;color:var(--teal)">{{ seqSelReadout }}</div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ASK ATLAS transient annotation -->
+  <sc-if value="{{ atlasActive }}" hint-placeholder-val="{{ false }}">
+    <div class="hx-glass" style="position:absolute;top:78px;left:50%;transform:translateX(-50%);width:min(560px,64vw);z-index:26;border-radius:3px;padding:14px 18px;animation:hx-rise .4s ease both">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span style="display:flex;align-items:center;gap:8px;font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.22em;color:var(--teal)"><span style="width:5px;height:5px;border-radius:50%;background:var(--teal);box-shadow:0 0 8px var(--teal)"></span>ATLAS · GPT-5.6</span>
+        <button onClick="{{ onDismissAtlas }}" style="all:unset;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--ink-soft)">DISMISS ✕</button>
+      </div>
+      <p style="font-family:Spectral,serif;font-size:14.5px;line-height:1.5;color:var(--ink);margin:0 0 10px;text-wrap:pretty">{{ atlasAnswer }}</p>
+      <div style="display:flex;flex-direction:column;gap:3px;border-top:1px solid var(--glass-brd);padding-top:9px">
+        <sc-for list="{{ atlasTrace }}" as="tr" hint-placeholder-count="2">
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.04em;color:var(--ink-soft)">▸ {{ tr }}</div>
+        </sc-for>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- RELATION LEGEND -->
+  <sc-if value="{{ showRelLegend }}" hint-placeholder-val="{{ false }}">
+    <div class="hx-glass" style="position:absolute;right:26px;bottom:96px;z-index:20;border-radius:3px;padding:11px 13px;animation:hx-fade .3s ease both">
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:8.5px;letter-spacing:.2em;color:var(--ink-soft);margin-bottom:8px">THREAD TYPES</div>
+      <div style="display:flex;flex-direction:column;gap:5px">
+        <sc-for list="{{ relLegend }}" as="l" hint-placeholder-count="3">
+          <div style="display:flex;align-items:center;gap:8px;line-height:1.3"><span style="width:16px;height:2px;background:{{ l.color }};flex:none"></span><span style="font-family:'IBM Plex Mono',monospace;font-size:8.5px;letter-spacing:.06em;color:var(--ink);white-space:nowrap">{{ l.label }}</span></div>
+        </sc-for>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- TELEMETRY -->
+  <sc-if value="{{ showTelemetryBar }}" hint-placeholder-val="{{ true }}">
+    <div style="position:absolute;left:118px;bottom:26px;z-index:15;pointer-events:none;transition:opacity .4s;opacity:{{ telemetryOpacity }}">
+      <div style="font-family:Spectral,serif;font-style:italic;font-size:13px;color:var(--ink-soft);margin-bottom:6px">{{ statusLine }}</div>
+      <div style="display:flex;gap:18px;font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.12em;color:var(--ink-faint)">
+        <span>{{ fps }} FPS</span><span>{{ visible }} VISIBLE</span><span>575,503 INDEXED</span>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ASK ATLAS summon + hint -->
+  <sc-if value="{{ showAskButton }}" hint-placeholder-val="{{ true }}">
+    <div style="position:absolute;right:26px;bottom:26px;z-index:20;text-align:right">
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.16em;color:var(--ink-faint);margin-bottom:9px;transition:opacity .5s;opacity:{{ hintOpacity }}">{{ navHint }}</div>
+      <button onClick="{{ onOpenCommand }}" class="hx-glass" style="cursor:pointer;display:inline-flex;align-items:center;gap:9px;padding:10px 14px;pointer-events:auto;border-radius:3px">
+        <span style="width:5px;height:5px;border-radius:50%;background:var(--teal);box-shadow:0 0 8px var(--teal)"></span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.18em;color:var(--ink)">ASK ATLAS</span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--ink-faint)">⌘K</span>
+      </button>
+    </div>
+  </sc-if>
+
+  <!-- COMMAND FIELD -->
+  <sc-if value="{{ commandOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;inset:0;z-index:44;display:flex;align-items:flex-end;justify-content:center;padding-bottom:92px;background:var(--scrim);pointer-events:auto" onClick="{{ onCloseCommand }}">
+      <div onClick="{{ onStop }}" class="hx-glass" style="width:min(620px,80vw);border-radius:3px;padding:20px 22px;animation:hx-rise .3s ease both">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:13px">
+          <span style="display:flex;align-items:center;gap:9px;font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.22em;color:var(--ink)"><span style="width:5px;height:5px;border-radius:50%;background:var(--teal);box-shadow:0 0 8px var(--teal)"></span>ATLAS · GPT-5.6</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.12em;color:var(--ink-faint)">SEMANTIC · SCENE CONTROL</span>
+        </div>
+        <p style="font-family:Spectral,serif;font-size:14.5px;font-style:italic;color:var(--ink-soft);margin:0 0 14px">Ask a question — I move the scene and show you what I changed. For exact filtering, use Query.</p>
+        <div style="display:flex;align-items:center;gap:13px;border-top:1px solid var(--glass-brd);padding-top:13px">
+          <span style="color:var(--teal);font-family:'IBM Plex Mono',monospace">›</span>
+          <input ref="{{ commandRef }}" value="{{ command }}" onInput="{{ onCommandInput }}" onKeyDown="{{ onCommandKey }}" placeholder="why are these neighbours? · highlight low-confidence regions · design a binder…" style="all:unset;flex:1;font-family:Spectral,serif;font-size:15px;color:var(--ink);caret-color:var(--teal)">
+        </div>
+        <div style="display:flex;gap:7px;margin-top:12px;flex-wrap:wrap">
+          <sc-for list="{{ atlasSuggest }}" as="a" hint-placeholder-count="3">
+            <button onClick="{{ a.run }}" style="all:unset;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.04em;color:var(--ink-soft);border:1px solid var(--glass-brd);padding:5px 9px;border-radius:2px">{{ a.label }}</button>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- LOADING (no spin) -->
+  <sc-if value="{{ isLoading }}" hint-placeholder-val="{{ true }}">
+    <div style="position:absolute;inset:0;z-index:60;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--load-bg)">
+      <div style="position:relative;width:120px;height:120px;display:flex;align-items:center;justify-content:center;overflow:hidden">
+        <div style="position:absolute;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--teal),transparent);opacity:.5;animation:hx-scan 3.2s linear infinite"></div>
+        <img src="{{ markSrc }}" alt="Helicase" style="width:76px;height:76px;object-fit:contain">
+      </div>
+      <div style="margin-top:40px;text-align:center;width:280px">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.3em;color:var(--ink)">{{ stageLabel }}</div>
+        <div style="width:100%;height:1px;background:var(--line);margin:16px 0 0;overflow:hidden"><div style="height:100%;width:{{ progressPct }};background:var(--teal);transition:width .5s cubic-bezier(.4,0,.1,1)"></div></div>
+        <div style="display:flex;justify-content:space-between;margin-top:12px">
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.04em;color:var(--ink-faint)">{{ loadDetail }}</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--ink-faint)">{{ progressPct }}</span>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:&quot;100%&quot;,&quot;height&quot;:&quot;100%&quot;},&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;light&quot;,&quot;dark&quot;],&quot;default&quot;:&quot;light&quot;,&quot;tsType&quot;:&quot;'light'|'dark'&quot;,&quot;section&quot;:&quot;Environment&quot;},&quot;reduceMotion&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Environment&quot;},&quot;showTelemetry&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Instrument&quot;}}">
+class Component extends DCLogic {
+  canvasRef = React.createRef();
+  labelsRef = React.createRef();
+  searchRef = React.createRef();
+  commandRef = React.createRef();
+  seqRef = React.createRef();
+
+  state = {
+    theme: (this.props.theme === 'dark' ? 'dark' : 'light'),
+    phase:'loading', progress:0, stage:0, familiesMapped:0,
+    view:'universe', territory:null, sel:null, tier:'glance',
+    rep:'cartoon', colorMode:'chain', confidence:false, ligands:false,
+    query:'', queryActive:false, queryFilter:'', queryCount:'',
+    command:'', commandOpen:false, atlas:null,
+    threadsOn:false, seqOpen:false, seqSel:null,
+    design:null,
+    sound:false, fps:60, interacting:false, hintSeen:false
+  };
+
+  // ============ REAL SEQUENCES (confident) ============
+  SEQ = {
+    P69905:'VLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHFDLSHGSAQVKGHGKKVADALTNAVAHVDDMPNALSALSDLHAHKLRVDPVNFKLLSHCLLVTLAAHLPAEFTPAVHASLDKFLASVSTVLTSKYR',
+    P01308:'FVNQHLCGSHLVEALYLVCGERGFFYTPKTGIVEQCCTSICSLYQLENYCN',
+    P42212:'MSKGEELFTGVVPILVELDGDVNGHKFSVSGEGEGDATYGKLTLKFICTTGKLPVPWPTLVTTFSYGVQCFSRYPDHMKQHDFFKSAMPEGYVQERTIFFKDDGNYKTRAEVKFEGDTLVNRIELKGIDFKEDGNILGHKLEYNYNSHNVYIMADKQKNGIKVNFKIRHNIEDGSVQLADHYQQNTPIGDGPVLLPDNHYLSTQSALSKDPNEKRDHMVLLEFVTAAGITHGMDELYK'
+  };
+
+  HEROES = [
+    { id:'P69905', name:'Hemoglobin subunit alpha', gene:'HBA1', organism:'Homo sapiens (Human)', family:'Globin family', residues:142, predicted:false, method:'X-ray diffraction', resolution:'2.10 Å', pdb:'1HHO', chains:'A', fam:0, seqReal:true,
+      evidence:'Experimental structure',
+      functionShort:'One of four subunits of haemoglobin, the iron-containing protein that carries oxygen from the lungs to every tissue in the body.',
+      functionLong:'Haemoglobin subunit alpha combines with beta subunits to form the α2β2 tetramer. Each subunit cradles a haem group whose iron atom binds one O₂ molecule reversibly, allowing red blood cells to load oxygen in the lungs and release it where it is needed.',
+      process:'Oxygen transport; carbon-dioxide transport', location:'Cytosol of erythrocytes', pathway:'Gas exchange',
+      disease:'Alpha-thalassaemias arise from reduced or absent alpha-globin production.',
+      homologues:'Haemoglobin β (P68871), Myoglobin (P02144)',
+      source:'UniProt P69905 · RCSB PDB 1HHO · sequence UniProt canonical',
+      refs:['Perutz M.F. (1960) Nature — first haemoglobin structure.','Park S.Y. et al. (2006) J Mol Biol — 1HHO refinement.'],
+      fact:'Binding one oxygen molecule makes the next three bind more readily — the textbook case of cooperative allostery.' },
+    { id:'P01308', name:'Insulin', gene:'INS', organism:'Homo sapiens (Human)', family:'Insulin family', residues:51, predicted:false, method:'X-ray diffraction', resolution:'1.50 Å', pdb:'4INS', chains:'A, B', fam:1, seqReal:true,
+      evidence:'Experimental structure',
+      functionShort:'The hormone that lowers blood glucose, signalling cells to take up sugar from the bloodstream after a meal.',
+      functionLong:'Insulin is secreted by pancreatic β-cells. The mature hormone is two chains (A and B) linked by disulphide bonds, cleaved from a single proinsulin precursor. It binds the insulin receptor to trigger glucose uptake and storage.',
+      process:'Glucose homeostasis; metabolic regulation', location:'Secreted', pathway:'Insulin signalling',
+      disease:'Central to type 1 and type 2 diabetes mellitus.',
+      homologues:'IGF-1 (P05019), Relaxin (P04808)',
+      source:'UniProt P01308 · RCSB PDB 4INS · mature two-chain hormone shown',
+      refs:['Sanger F. (1955) — first protein ever sequenced.','Adams M.J. et al. (1969) Nature — insulin crystal structure.'],
+      fact:'The first protein ever sequenced and the first medicine made by recombinant DNA — the molecule that opened biotechnology.' },
+    { id:'Q8WZ42', name:'Titin', gene:'TTN', organism:'Homo sapiens (Human)', family:'Immunoglobulin / fibronectin-III repeats', residues:34350, predicted:false, method:'X-ray (fragment)', resolution:'—', pdb:'1BPV', chains:'A', fam:2, seqReal:false,
+      evidence:'Experimental (partial)',
+      functionShort:'The largest protein in the human body — a molecular spring that spans half a muscle sarcomere and sets its passive elasticity.',
+      functionLong:'Titin runs from the Z-disc to the M-line of the sarcomere. Its chains of immunoglobulin and fibronectin-III domains, plus an elastic PEVK region, unfold and refold under load, acting as a bidirectional spring that keeps the muscle filament lattice organised.',
+      process:'Muscle contraction; sarcomere assembly', location:'Sarcomere (striated muscle)', pathway:'Striated muscle contraction',
+      disease:'TTN mutations cause dilated and hypertrophic cardiomyopathies.',
+      homologues:'Obscurin (Q5VST9), Myomesin (P52179)',
+      source:'UniProt Q8WZ42 · RCSB PDB 1BPV (single domain) · full 34,350-aa sequence virtualized',
+      refs:['Labeit S., Kolmerer B. (1995) Science — titin as molecular ruler.','Bang M.L. et al. (2001) Circ Res — complete titin.'],
+      fact:'A single molecule spans ~1 µm — half a sarcomere, end to end. Its full sequence is 34,350 residues.' },
+    { id:'P08100', name:'Rhodopsin', gene:'RHO', organism:'Homo sapiens (Human)', family:'GPCR · opsin subfamily', residues:348, predicted:false, method:'X-ray diffraction', resolution:'2.20 Å', pdb:'1F88', chains:'A, B', fam:3, seqReal:false,
+      evidence:'Experimental structure',
+      functionShort:'The dim-light photoreceptor in the rod cells of the eye — the first G-protein-coupled receptor ever solved.',
+      functionLong:'Rhodopsin is a seven-transmembrane GPCR bound to the chromophore 11-cis-retinal. A single photon isomerises retinal, changing the receptor’s shape and activating the G-protein transducin, launching the visual signalling cascade.',
+      process:'Visual phototransduction', location:'Rod outer-segment membrane', pathway:'Phototransduction cascade',
+      disease:'RHO mutations are a leading cause of retinitis pigmentosa.',
+      homologues:'Cone opsins (P04000, P03999), β2-adrenergic receptor (P07550)',
+      source:'UniProt P08100 · RCSB PDB 1F88 · sequence streams from UniProt in production',
+      refs:['Palczewski K. et al. (2000) Science — first GPCR crystal structure.'],
+      fact:'So sensitive that its cascade lets you register a single photon of light.' },
+    { id:'O74354', name:'Nucleolar protein dnt1', gene:'dnt1', organism:'Schizosaccharomyces pombe (Fission yeast)', family:'Nucleolar dnt1', residues:599, predicted:true, plddt:50.4, method:'AlphaFold2 prediction', resolution:'—', pdb:'AF-O74354-F1', chains:'—', fam:4, seqReal:false,
+      evidence:'Predicted structure',
+      functionShort:'A nucleolar protein that negatively regulates the septation-initiation network; largely intrinsically disordered.',
+      functionLong:'dnt1 localises to the nucleolus and antagonises the septation-initiation network (SIN) that controls cytokinesis in fission yeast. Much of the chain lacks a stable fold, so the predicted model carries low confidence across long stretches.',
+      process:'Regulation of cytokinesis; SIN signalling', location:'Nucleolus', pathway:'Septation-initiation network',
+      disease:'—', homologues:'No confident structural homologues',
+      source:'UniProt O74354 · AlphaFold DB model v4 · sequence streams from UniProt',
+      refs:['Jumper J. et al. (2021) Nature — AlphaFold2.','Varadi M. et al. (2022) NAR — AlphaFold DB.'],
+      fact:'Largely intrinsically disordered — the model’s low confidence is not an error. For this protein, uncertainty is itself the finding.' },
+    { id:'P42212', name:'Green fluorescent protein', gene:'GFP', organism:'Aequorea victoria (Jellyfish)', family:'GFP family', residues:238, predicted:false, method:'X-ray diffraction', resolution:'1.90 Å', pdb:'1EMA', chains:'A', fam:5, seqReal:true,
+      evidence:'Experimental structure',
+      functionShort:'A jellyfish protein that glows green — folded into a barrel that makes and shields its own light-emitting core.',
+      functionLong:'GFP folds into an eleven-stranded β-barrel with a central helix. Three of its own residues cyclise and oxidise to form a chromophore that fluoresces green when excited by blue light — requiring no external cofactor.',
+      process:'Bioluminescence (native); molecular reporter (biotech)', location:'Cytosol', pathway:'—',
+      disease:'—', homologues:'DsRed (Q9U6Y5), mCherry derivatives',
+      source:'UniProt P42212 · RCSB PDB 1EMA · sequence UniProt canonical',
+      refs:['Ormö M. et al. (1996) Science — GFP crystal structure.','Shimomura O. (1962) — original discovery. Nobel Prize 2008.'],
+      fact:'It folds and lights its own chromophore green with no cofactor — it rewired cell biology and won the 2008 Nobel Prize.' }
+  ];
+
+  FAMS = [
+    {name:'Transport & Oxygen', neigh:['Globins','Cytochromes'], count:10420},
+    {name:'Signalling & Hormones', neigh:['Peptide hormones','Growth factors'], count:8830},
+    {name:'Structural & Muscle', neigh:['Sarcomeric','Cytoskeletal'], count:15240},
+    {name:'Membrane & Receptors', neigh:['GPCRs','Ion channels'], count:12610},
+    {name:'Nucleic-acid & Nuclear', neigh:['Nucleolar','Transcription'], count:9180},
+    {name:'Metabolic Enzymes', neigh:['Oxidoreductases','Fluorescent'], count:18720}
+  ];
+
+  THREADS = {
+    P69905:[
+      {name:'Hemoglobin β', acc:'P68871', type:'Complex', status:'Experimental', strength:0.95, tfam:0, basis:'Forms the α₂β₂ haemoglobin tetramer (PDB 1HHO).'},
+      {name:'Myoglobin', acc:'P02144', type:'Homology', status:'Computed', strength:0.71, tfam:0, basis:'Shared globin fold; ~27% sequence identity (SCOP a.1.1).'},
+      {name:'Haptoglobin', acc:'P00738', type:'Interaction', status:'Experimental', strength:0.62, tfam:1, basis:'Binds free haemoglobin dimers in plasma.'}
+    ],
+    P01308:[
+      {name:'Insulin receptor', acc:'P06213', type:'Interaction', status:'Experimental', strength:0.93, tfam:3, basis:'Insulin is the receptor’s native ligand (PDB 6CE7).'},
+      {name:'IGF-1', acc:'P05019', type:'Homology', status:'Computed', strength:0.68, tfam:1, basis:'Insulin/IGF superfamily; shared A/B-domain fold.'}
+    ],
+    Q8WZ42:[
+      {name:'Obscurin', acc:'Q5VST9', type:'Homology', status:'Computed', strength:0.66, tfam:2, basis:'Shared Ig/FnIII repeat architecture in the sarcomere.'},
+      {name:'Alpha-actinin', acc:'P12814', type:'Interaction', status:'Experimental', strength:0.74, tfam:2, basis:'Titin Z-disc region binds α-actinin.'}
+    ],
+    P08100:[
+      {name:'Transducin α', acc:'P11488', type:'Interaction', status:'Experimental', strength:0.9, tfam:3, basis:'Activated rhodopsin couples to transducin (Gt).'},
+      {name:'β2-adrenergic receptor', acc:'P07550', type:'Homology', status:'Computed', strength:0.64, tfam:3, basis:'Class A GPCR; shared 7-TM fold.'}
+    ],
+    O74354:[
+      {name:'Sid1 kinase', acc:'O94534', type:'Process', status:'Annotated', strength:0.6, tfam:4, basis:'Both act within the septation-initiation network.'}
+    ],
+    P42212:[
+      {name:'DsRed', acc:'Q9U6Y5', type:'Homology', status:'Computed', strength:0.58, tfam:5, basis:'Shared β-barrel chromophore-forming fold.'}
+    ]
+  };
+
+  REL_COLORS = {Complex:'#0c8c78', Interaction:'#5a7fb5', Homology:'#b07b3a', Process:'#7a6a9c', Annotated:'#7a6a9c'};
+
+  STAGES = ['LOADING ATLAS MANIFEST','RESOLVING PROTEIN TERRITORIES','PREPARING SEARCH INDEX','INITIALISING RENDERER','CONNECTING STRUCTURE SERVICES'];
+  DESIGN_STAGES = ['TARGET','OBJECTIVE','BINDING SITE','BACKBONE','SEQUENCE DESIGN','PREDICTED FOLD','METRICS','COMPARE','CANDIDATE'];
+
+  THEMES = {
+    light:{ fam:['#3c5a86','#8f4a44','#3f6f60','#9a7a34','#6a4a70','#4a4f57'], teal:'#0c8c78',
+      fog:'#efece4', fogNear:300, fogFar:1200, size:22, add:false, dimNon:0.30 },
+    dark:{ fam:['#7d97d0','#d68b83','#5fc6a6','#d9b96e','#b490c8','#9aa2b0'], teal:'#34d6b8',
+      fog:'#0d1013', fogNear:440, fogFar:2400, size:26, add:true, dimNon:0.26 }
+  };
+
+  componentDidMount(){
+    this.mounted=true; try{ window.__heli=this; }catch(e){}
+    this._key=(e)=>this.onKey(e);
+    window.addEventListener('keydown', this._key);
+    this._rsz=()=>this.resize(); window.addEventListener('resize', this._rsz);
+    this.lastAct=performance.now();
+    this.levelCam={};
+    this.runLoader(); this.waitThree();
+  }
+  componentDidUpdate(prev){
+    if(prev.theme!==this.props.theme && this.props.theme && this.props.theme!==this.state.theme){
+      this.setState({theme:this.props.theme}, ()=>this.applyTheme());
+    }
+    const S=this.state;
+    const key=[S.seqOpen,S.sel&&S.sel.id,S.rep,S.confidence,S.seqSel&&S.seqSel.a,S.seqSel&&S.seqSel.b,S.theme].join('|');
+    if(S.seqOpen && key!==this._seqKey){ this._seqKey=key; this.renderSequence(); }
+  }
+  componentWillUnmount(){ this.mounted=false; cancelAnimationFrame(this._raf);
+    window.removeEventListener('keydown',this._key); window.removeEventListener('resize',this._rsz); }
+
+  runLoader(){
+    const tick=()=>{ if(!this.mounted) return;
+      let p=this.state.progress; p+=(1-p)*0.10+0.014;
+      const st=Math.min(this.STAGES.length-1, Math.floor(p*this.STAGES.length));
+      const mapped=Math.floor(575503*Math.min(1,p*1.02));
+      this.setState({progress:p, stage:st, familiesMapped:mapped});
+      if(p<0.985) this._lt=setTimeout(tick,130);
+      else setTimeout(()=>{ if(this.mounted) this.setState({phase:'ready'}); },450);
+    }; tick();
+  }
+  waitThree(){ if(window.THREE){ this.initThree(); return; } this._tw=setTimeout(()=>this.waitThree(),60); }
+
+  mulberry(a){ return function(){ a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296; }; }
+  gauss(r){ return (r()+r()+r()-1.5)/1.5; }
+  hashId(s){ let a=0; for(let i=0;i<s.length;i++) a=(a*31+s.charCodeAt(i))|0; return a>>>0; }
+  hex(h){ if(h[0]==='#'){h=h.slice(1);return[parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];} const m=h.match(/\d+/g);return m?m.map(Number):[128,128,128]; }
+  mix(a,b,t){ const A=this.hex(a),B=this.hex(b); return 'rgb('+A.map((v,i)=>Math.round(v+(B[i]-v)*t)).join(',')+')'; }
+
+  // ============ THREE ============
+  initThree(){
+    const THREE=window.THREE;
+    const canvas=this.canvasRef.current; if(!canvas){ setTimeout(()=>this.initThree(),60); return; }
+    const renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true,preserveDrawingBuffer:true});
+    renderer.setClearColor(0x000000,0); renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+    const scene=new THREE.Scene();
+    const camera=new THREE.PerspectiveCamera(46,1,1,9000);
+    scene.add(new THREE.AmbientLight(0xffffff,0.7));
+    const key=new THREE.DirectionalLight(0xffffff,1.1); key.position.set(120,180,140); scene.add(key);
+    const rim=new THREE.DirectionalLight(0x9fb6d8,0.5); rim.position.set(-140,-60,-120); scene.add(rim);
+    this.lights={key,rim,amb:scene.children[0]};
+
+    const RNG=this.mulberry(9241);
+    const famCount=this.FAMS.length, perFam=1700, halo=3200;
+    const N=famCount*perFam+halo;
+    const pos=new Float32Array(N*3), base=new Float32Array(N*3), tgt=new Float32Array(N*3);
+    const col=new Float32Array(N*3), scl=new Float32Array(N), match=new Float32Array(N), fam=new Float32Array(N);
+    const famOf=new Int16Array(N);
+    const centres=[];
+    for(let f=0;f<famCount;f++){ const a=(f/famCount)*Math.PI*2+0.3, rad=230+(f%2)*46;
+      centres.push(new THREE.Vector3(Math.cos(a)*rad,(RNG()-0.5)*160,Math.sin(a)*rad*0.82)); }
+    let i=0;
+    for(let f=0;f<famCount;f++){ const c=centres[f];
+      for(let k=0;k<perFam;k++){ const gx=this.gauss(RNG)*72,gy=this.gauss(RNG)*54,gz=this.gauss(RNG)*72;
+        base[i*3]=c.x+gx; base[i*3+1]=c.y+gy; base[i*3+2]=c.z+gz; scl[i]=0.5+RNG()*0.85; famOf[i]=f; fam[i]=f; i++; } }
+    for(let k=0;k<halo;k++){ const r=600+RNG()*720,u=RNG()*2-1,th=RNG()*Math.PI*2,s=Math.sqrt(1-u*u);
+      base[i*3]=Math.cos(th)*s*r; base[i*3+1]=u*r*0.5; base[i*3+2]=Math.sin(th)*s*r; scl[i]=0.26+RNG()*0.3; famOf[i]=-1; fam[i]=-1; i++; }
+    this.HEROES.forEach((h)=>{ const pIdx=h.fam*perFam+6, c=centres[h.fam];
+      base[pIdx*3]=c.x+(RNG()-0.5)*30; base[pIdx*3+1]=c.y+18; base[pIdx*3+2]=c.z+(RNG()-0.5)*30; scl[pIdx]=2.6; h._pi=pIdx; });
+    for(let k=0;k<N*3;k++){ pos[k]=base[k]; tgt[k]=base[k]; }
+
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
+    geo.setAttribute('color',new THREE.BufferAttribute(col,3));
+    geo.setAttribute('aScale',new THREE.BufferAttribute(scl,1));
+    geo.setAttribute('aMatch',new THREE.BufferAttribute(match,1));
+    geo.setAttribute('aFam',new THREE.BufferAttribute(fam,1));
+
+    const mat=new THREE.ShaderMaterial({
+      uniforms:{ uSize:{value:22}, uPR:{value:renderer.getPixelRatio()},
+        uFog:{value:new THREE.Color('#efece4')}, uFogNear:{value:300}, uFogFar:{value:1200},
+        uTheme:{value:0}, uTeal:{value:new THREE.Color('#0c8c78')},
+        uDim:{value:1}, uDimNon:{value:1}, uActiveFam:{value:-1}, uFamFocus:{value:0} },
+      vertexShader:`attribute vec3 color;attribute float aScale;attribute float aMatch;attribute float aFam;
+        uniform float uSize,uPR,uFogNear,uFogFar;varying vec3 vC;varying float vFog;varying float vM;varying float vF;
+        void main(){vC=color;vM=aMatch;vF=aFam;vec4 mv=modelViewMatrix*vec4(position,1.0);
+        gl_PointSize=min(aScale*uSize*uPR*(300.0/ -mv.z),26.0*uPR);
+        float d=-mv.z;vFog=clamp((d-uFogNear)/(uFogFar-uFogNear),0.0,1.0);gl_Position=projectionMatrix*mv;}`,
+      fragmentShader:`precision mediump float;varying vec3 vC;varying float vFog;varying float vM;varying float vF;
+        uniform vec3 uFog,uTeal;uniform float uTheme,uDim,uDimNon,uActiveFam,uFamFocus;
+        void main(){vec2 u=gl_PointCoord-0.5;float dd=length(u);float a=smoothstep(0.5,0.24,dd);if(a<=0.002)discard;
+        vec3 c=mix(vC,uTeal,vM*0.9);float fk=uTheme<0.5?0.9:0.35;c=mix(c,uFog,vFog*fk);
+        float al=a;al*=mix(1.0,1.0-vFog*0.82,step(uTheme,0.5));al*=uDim;al*=mix(uDimNon,1.0,vM);
+        if(uFamFocus>0.5){float m=abs(vF-uActiveFam)<0.5?1.0:uDimNon;al*=m;}
+        gl_FragColor=vec4(c,al);}`,
+      transparent:true, depthWrite:false, blending:THREE.NormalBlending
+    });
+    const points=new THREE.Points(geo,mat); scene.add(points);
+
+    // marker: bracket sprite
+    const marker=new THREE.Sprite(new THREE.SpriteMaterial({map:this.bracketTex(THREE), transparent:true, opacity:0, depthTest:false}));
+    marker.visible=false; scene.add(marker);
+    // selection residue sphere
+    const selSphere=new THREE.Mesh(new THREE.SphereGeometry(1.4,12,12), new THREE.MeshBasicMaterial({color:'#0c8c78'}));
+    selSphere.visible=false;
+    const structGroup=new THREE.Group(); scene.add(structGroup);
+    structGroup.add(selSphere);
+    const threadGroup=new THREE.Group(); scene.add(threadGroup);
+    // ambient inter-territory arcs (very faint)
+    const ambGroup=new THREE.Group(); scene.add(ambGroup);
+    for(let a=0;a<centres.length;a++){ const b=(a+2)%centres.length;
+      const mid=centres[a].clone().add(centres[b]).multiplyScalar(0.5); mid.y+=120;
+      const cv=new THREE.QuadraticBezierCurve3(centres[a],mid,centres[b]);
+      const g=new THREE.BufferGeometry().setFromPoints(cv.getPoints(40));
+      ambGroup.add(new THREE.Line(g,new THREE.LineBasicMaterial({color:'#888',transparent:true,opacity:0.05}))); }
+
+    this.three={THREE,renderer,scene,camera,points,geo,mat,base,tgt,col,match,fam,famOf,N,perFam,marker,selSphere,structGroup,threadGroup,ambGroup,centres,ray:new THREE.Raycaster()};
+    this.setPointColors();
+    this.cam={tgt:new THREE.Vector3(0,0,0),r:640,theta:0.7,phi:1.12};
+    this.now={tgt:new THREE.Vector3(0,0,0),r:640,theta:0.7,phi:1.12};
+    this.tween=null; this.reflow=null; this._dimTarget=1; this._hoverThread=-1;
+    this.buildLabels(); this.applyTheme(); this.resize(); this.bindPointer(); this.loop();
+    // cinematic arrival
+    this.startTween({tgt:new THREE.Vector3(0,0,0),r:560,theta:0.7,phi:1.08},2200);
+    this.cam.r=560; this.cam.phi=1.08;
+  }
+
+  bracketTex(THREE){ const c=document.createElement('canvas'); c.width=c.height=128; const x=c.getContext('2d');
+    x.strokeStyle='#fff'; x.lineWidth=6; x.lineCap='square'; const p=18,L=30,S=128;
+    const corners=[[p,p,1,1],[S-p,p,-1,1],[p,S-p,1,-1],[S-p,S-p,-1,-1]];
+    corners.forEach(([cx,cy,sx,sy])=>{ x.beginPath(); x.moveTo(cx,cy+sy*L); x.lineTo(cx,cy); x.lineTo(cx+sx*L,cy); x.stroke(); });
+    const t=new THREE.CanvasTexture(c); return t; }
+
+  setPointColors(){ const t=this.three; if(!t) return; const THREE=t.THREE, th=this.THEMES[this.state.theme], c=new THREE.Color();
+    for(let i=0;i<t.N;i++){ const f=t.famOf[i];
+      if(f<0){ c.set(th.fog); c.lerp(new THREE.Color(this.state.theme==='light'?'#8a8578':'#3a4048'),0.6); } else c.set(th.fam[f]);
+      t.col[i*3]=c.r; t.col[i*3+1]=c.g; t.col[i*3+2]=c.b; }
+    t.geo.attributes.color.needsUpdate=true; }
+
+  applyTheme(){ const t=this.three; if(!t) return; const THREE=t.THREE, th=this.THEMES[this.state.theme];
+    t.mat.uniforms.uTheme.value=this.state.theme==='light'?0:1; t.mat.uniforms.uFog.value.set(th.fog);
+    t.mat.uniforms.uFogNear.value=th.fogNear; t.mat.uniforms.uFogFar.value=th.fogFar; t.mat.uniforms.uSize.value=th.size;
+    t.mat.uniforms.uTeal.value.set(th.teal); t.mat.blending=th.add?THREE.AdditiveBlending:THREE.NormalBlending; t.mat.needsUpdate=true;
+    t.marker.material.color.set(th.teal); t.selSphere.material.color.set(th.teal);
+    this.lights.amb.intensity=this.state.theme==='light'?0.85:0.42; this.lights.key.intensity=this.state.theme==='light'?1.05:1.25;
+    this.setPointColors();
+    if(t.structGroup.children.length>1 && this.state.sel) this.buildStructure(this.state.sel);
+    this.updateThreads(); }
+
+  resize(){ const t=this.three; if(!t) return; const el=this.canvasRef.current, w=el.clientWidth||innerWidth, h=el.clientHeight||innerHeight;
+    t.renderer.setSize(w,h,false); t.camera.aspect=w/h; t.camera.updateProjectionMatrix(); t.mat.uniforms.uPR.value=t.renderer.getPixelRatio(); }
+
+  // ---- camera input: orbit / pan / zoom-to-cursor / focus ----
+  bindPointer(){ const el=this.canvasRef.current; let down=false,pan=false,moved=0,lx=0,ly=0;
+    el.addEventListener('contextmenu',e=>e.preventDefault());
+    el.addEventListener('pointerdown',(e)=>{ down=true; pan=(e.button===2||e.button===1||e.shiftKey); moved=0; lx=e.clientX; ly=e.clientY; el.setPointerCapture(e.pointerId); this.act(); });
+    el.addEventListener('pointermove',(e)=>{ if(down){ const dx=e.clientX-lx,dy=e.clientY-ly; lx=e.clientX; ly=e.clientY; moved+=Math.abs(dx)+Math.abs(dy);
+        if(!this.tween){ if(pan) this.doPan(dx,dy); else { this.cam.theta-=dx*0.0045; this.cam.phi=Math.max(0.14,Math.min(3.0,this.cam.phi-dy*0.0045)); } } this.act();
+      } else this.hover(e); });
+    el.addEventListener('pointerup',(e)=>{ down=false; if(moved<6&&!pan) this.click(e); });
+    el.addEventListener('dblclick',(e)=>this.dbl(e));
+    el.addEventListener('wheel',(e)=>{ e.preventDefault(); if(this.tween) return; const f=1+(e.deltaY>0?1:-1)*(e.ctrlKey?0.05:0.09);
+      const before=this.cursorWorld(e); const nr=Math.max(40,Math.min(1700,this.cam.r*f)); const zoomIn=nr<this.cam.r; this.cam.r=nr;
+      if(before){ this.cam.tgt.lerp(before, zoomIn?0.16:-0.10); this.clampTgt(); } this.act(); },{passive:false});
+  }
+  act(){ this.lastAct=performance.now(); if(!this.state.hintSeen) this.setState({hintSeen:true}); }
+  clampTgt(){ const c=this.cam.tgt; c.x=Math.max(-900,Math.min(900,c.x)); c.y=Math.max(-600,Math.min(600,c.y)); c.z=Math.max(-900,Math.min(900,c.z)); }
+  doPan(dx,dy){ const t=this.three, cam=t.camera; const right=new t.THREE.Vector3(), up=new t.THREE.Vector3();
+    cam.matrixWorld.extractBasis(right,up,new t.THREE.Vector3()); const s=this.cam.r*0.0016;
+    this.cam.tgt.addScaledVector(right,-dx*s); this.cam.tgt.addScaledVector(up,dy*s); this.clampTgt(); }
+  cursorWorld(e){ const t=this.three; if(!t) return null; const n=this.ndc(e); t.ray.setFromCamera({x:n.x,y:n.y},t.camera);
+    return t.ray.ray.origin.clone().add(t.ray.ray.direction.clone().multiplyScalar(this.now.r)); }
+  ndc(e){ const r=this.canvasRef.current.getBoundingClientRect(); return {x:((e.clientX-r.left)/r.width)*2-1,y:-((e.clientY-r.top)/r.height)*2+1}; }
+
+  hover(e){ const t=this.three; if(!t){return;} const el=this.canvasRef.current;
+    if(this.state.view==='inspect'||this.state.view==='design'){ el.style.cursor='grab'; return; }
+    const n=this.ndc(e); t.ray.setFromCamera({x:n.x,y:n.y},t.camera); t.ray.params.Points.threshold=this.now.r*0.016;
+    const hit=t.ray.intersectObject(t.points); let hero=hit.length?this.HEROES.find(h=>h._pi===hit[0].index):null;
+    el.style.cursor=(hit.length&&(hero||this.nearHero(hit[0].index)))?'pointer':'grab'; }
+  nearHero(idx){ const t=this.three; let best=null,bd=1e9; const p=new t.THREE.Vector3(t.base[idx*3],t.base[idx*3+1],t.base[idx*3+2]);
+    this.HEROES.forEach(h=>{ const hp=new t.THREE.Vector3(t.base[h._pi*3],t.base[h._pi*3+1],t.base[h._pi*3+2]); const d=hp.distanceTo(p); if(d<bd){bd=d;best=h;} }); return bd<100?best:null; }
+
+  click(e){ const t=this.three; if(!t) return;
+    if(this.state.view==='inspect'){ this.pickResidueFromStructure(e); return; }
+    if(this.state.view==='design') return;
+    const n=this.ndc(e); t.ray.setFromCamera({x:n.x,y:n.y},t.camera); t.ray.params.Points.threshold=this.now.r*0.022;
+    const hit=t.ray.intersectObject(t.points); if(!hit.length) return;
+    let hero=this.HEROES.find(h=>h._pi===hit[0].index)||this.nearHero(hit[0].index);
+    if(hero) this.selectHero(hero); else this.playCue('deny'); }
+
+  dbl(e){ const t=this.three; if(!t||this.state.view==='inspect'||this.state.view==='design') return;
+    const p=this.cursorWorld(e); if(!p) return; this.act();
+    this.startTween({tgt:p,r:Math.max(160,this.cam.r*0.6),theta:this.cam.theta,phi:this.cam.phi},1100);
+    this.cam.tgt.copy(p); this.cam.r=Math.max(160,this.cam.r*0.6); this.clampTgt(); this.playCue('tick'); }
+
+  snap(){ return {tgt:this.cam.tgt.clone(),r:this.cam.r,theta:this.cam.theta,phi:this.cam.phi}; }
+  applySnap(s,dur){ this.startTween({tgt:s.tgt.clone(),r:s.r,theta:s.theta,phi:s.phi},dur||1400);
+    this.cam.tgt.copy(s.tgt); this.cam.r=s.r; this.cam.theta=s.theta; this.cam.phi=s.phi; }
+
+  // ---- territory ----
+  enterTerritory(fi){ const t=this.three;
+    this.levelCam.universe=this.snap();
+    const c=t.centres[fi];
+    for(let i=0;i<t.N;i++){ const f=t.famOf[i]; if(f===fi){ t.tgt[i*3]=c.x+(t.base[i*3]-c.x)*1.7; t.tgt[i*3+1]=c.y+(t.base[i*3+1]-c.y)*1.7; t.tgt[i*3+2]=c.z+(t.base[i*3+2]-c.z)*1.7; }
+      else { t.tgt[i*3]=t.base[i*3]; t.tgt[i*3+1]=t.base[i*3+1]; t.tgt[i*3+2]=t.base[i*3+2]; } }
+    this.reflow={t0:performance.now(),dur:1400};
+    t.mat.uniforms.uActiveFam.value=fi; t.mat.uniforms.uFamFocus.value=1;
+    this.setState({view:'territory',territory:fi,queryActive:false,sel:null});
+    this.applySnap({tgt:c.clone(),r:260,theta:this.cam.theta,phi:1.05},1500);
+    this.playCue('enter'); }
+
+  selectHero(h){ const t=this.three;
+    if(this.state.view==='universe') this.levelCam.universe=this.snap();
+    else if(this.state.view==='territory') this.levelCam.territory=this.snap();
+    const sel=this.decorate(h);
+    this.setState({view:'glance',sel,tier:'glance',rep:'cartoon',confidence:false,ligands:false,queryActive:false,threadsOn:false,seqOpen:false,seqSel:null,design:null,atlas:null});
+    const p=new t.THREE.Vector3(t.base[h._pi*3],t.base[h._pi*3+1],t.base[h._pi*3+2]);
+    t.marker.position.copy(p); t.marker.visible=true;
+    t.mat.uniforms.uFamFocus.value=1; t.mat.uniforms.uActiveFam.value=h.fam;
+    this.applySnap({tgt:p.clone(),r:150,theta:this.cam.theta,phi:1.05},1600);
+    this._dimTarget=0.6; this.buildThreads(sel); this.playCue('select'); }
+
+  decorate(h){ const rng=this.mulberry(this.hashId(h.id)); const th=this.THEMES[this.state.theme], fc=th.fam[h.fam];
+    const nd=h.residues>4000?5:(h.residues>250?4:3); const names=['N-terminal','Domain A','Linker','Domain B','C-terminal','Repeat region'];
+    let doms=[],acc=0; for(let i=0;i<nd;i++){ const w=(i===nd-1)?(100-acc):Math.max(10,Math.round((rng()*0.5+0.5)*(100-acc)/(nd-i))); const start=Math.round(acc/100*h.residues)+1; acc+=w; const end=Math.round(acc/100*h.residues);
+      doms.push({label:names[i%names.length], w:w+'%', color:(i%2?this.mix(fc,th.fog,0.42):fc), range:start+'–'+end}); }
+    return {...h, domains:doms, rows:[{k:'ORGANISM',v:h.organism},{k:'GENE',v:h.gene},{k:'FAMILY',v:h.family},{k:'LENGTH',v:h.residues.toLocaleString()+' aa'}] }; }
+
+  buildStructure(sel){ const t=this.three,THREE=t.THREE,g=t.structGroup;
+    for(let i=g.children.length-1;i>=0;i--){ const c=g.children[i]; if(c===t.selSphere) continue; c.geometry&&c.geometry.dispose(); c.material&&c.material.dispose&&c.material.dispose(); g.remove(c); }
+    g.position.copy(t.marker.position); const th=this.THEMES[this.state.theme];
+    const dseed=this.state.design?this.state.design.stage*13:0;
+    const rng=this.mulberry(this.hashId(sel.id)+7+dseed);
+    const n=Math.max(28,Math.min(240,Math.round(sel.residues/(sel.residues>4000?250:6))));
+    const pts=[]; let x=0,y=0,z=0,vx=rng()-0.5,vy=rng()-0.5,vz=rng()-0.5,helix=0,ha=0;
+    for(let i=0;i<n;i++){ if(helix<=0&&rng()<0.17){helix=6+Math.floor(rng()*10);ha=rng()*6.28;}
+      if(helix>0){x+=Math.cos(ha)*1.4;y+=0.9;z+=Math.sin(ha)*1.4;ha+=1.0;helix--;}
+      else{vx+=(rng()-0.5)*0.9-x*0.02;vy+=(rng()-0.5)*0.9-y*0.02;vz+=(rng()-0.5)*0.9-z*0.02;const m=Math.hypot(vx,vy,vz)||1;vx/=m;vy/=m;vz/=m;x+=vx*3.4;y+=vy*3.4;z+=vz*3.4;}
+      pts.push(new THREE.Vector3(x,y,z)); }
+    const box=new THREE.Box3().setFromPoints(pts),ctr=box.getCenter(new THREE.Vector3()),sz=box.getSize(new THREE.Vector3()),s=34/Math.max(sz.x,sz.y,sz.z,1);
+    pts.forEach(p=>p.sub(ctr).multiplyScalar(s)); const curve=new THREE.CatmullRomCurve3(pts);
+    this._curve=curve; this._nres=n; const famCol=new THREE.Color(th.fam[sel.fam]); const rep=this.state.rep;
+    const addMesh=(geom,mat)=>{ const m=new THREE.Mesh(geom,mat); g.add(m); return m; };
+    if(rep==='surface'){ const tube=new THREE.TubeGeometry(curve,Math.max(60,n*2),6.2,12,false); const mat=new THREE.MeshStandardMaterial({color:famCol,roughness:0.62,transparent:true,opacity:0}); addMesh(tube,mat); this.colorStruct(tube,mat,sel,n); this.fadeIn(mat,0.97); }
+    else if(rep==='ball'){ const sph=new THREE.SphereGeometry(1.35,10,10); const im=new THREE.InstancedMesh(sph,new THREE.MeshStandardMaterial({color:famCol,roughness:0.4,transparent:true,opacity:0}),pts.length); const d=new THREE.Object3D(); pts.forEach((p,ix)=>{d.position.copy(p);d.updateMatrix();im.setMatrixAt(ix,d.matrix);}); g.add(im); this.fadeIn(im.material,0.97);
+      const cyl=new THREE.CylinderGeometry(0.42,0.42,1,6); const bonds=new THREE.InstancedMesh(cyl,new THREE.MeshStandardMaterial({color:this.mix(th.fam[sel.fam],th.fog,0.35),roughness:0.5,transparent:true,opacity:0}),pts.length-1); const up=new THREE.Vector3(0,1,0);
+      for(let ix=0;ix<pts.length-1;ix++){const a=pts[ix],b=pts[ix+1],mid=a.clone().add(b).multiplyScalar(0.5),dir=b.clone().sub(a),len=dir.length();d.position.copy(mid);d.scale.set(1,len,1);d.quaternion.setFromUnitVectors(up,dir.clone().normalize());d.updateMatrix();bonds.setMatrixAt(ix,d.matrix);} g.add(bonds); this.fadeIn(bonds.material,0.9); }
+    else if(rep==='spacefill'){ const sph=new THREE.SphereGeometry(3.4,12,12); const im=new THREE.InstancedMesh(sph,new THREE.MeshStandardMaterial({color:famCol,roughness:0.5,transparent:true,opacity:0}),pts.length); const d=new THREE.Object3D(); pts.forEach((p,ix)=>{d.position.copy(p);d.updateMatrix();im.setMatrixAt(ix,d.matrix);}); g.add(im); this.fadeIn(im.material,0.97); }
+    else { const tube=new THREE.TubeGeometry(curve,Math.max(80,n*3),1.7,9,false); const mat=new THREE.MeshStandardMaterial({color:famCol,roughness:0.45,metalness:0.05,transparent:true,opacity:0}); addMesh(tube,mat); this.colorStruct(tube,mat,sel,n); this.fadeIn(mat,0.98); }
+    if(this.state.ligands){ const near=pts[Math.floor(pts.length*0.5)]; for(let l=0;l<5;l++){ const sp=addMesh(new THREE.SphereGeometry(1.6,10,10),new THREE.MeshStandardMaterial({color:'#c9922f',roughness:0.3,metalness:0.1,transparent:true,opacity:0})); sp.position.copy(near).add(new THREE.Vector3((rng()-0.5)*7,(rng()-0.5)*7,(rng()-0.5)*7)); this.fadeIn(sp.material,0.95); } }
+    // design binder chain
+    if(this.state.design && this.state.design.stage>=3){ const bpts=[]; let bx=18,by=6,bz=0; for(let i=0;i<22;i++){bx+=Math.cos(i*0.9)*2;by+=1.1;bz+=Math.sin(i*0.9)*2;bpts.push(new THREE.Vector3(bx,by,bz));} const bcv=new THREE.CatmullRomCurve3(bpts); const bt=new THREE.TubeGeometry(bcv,60,1.5,8,false); const bm=new THREE.MeshStandardMaterial({color:th.teal,roughness:0.4,transparent:true,opacity:0}); addMesh(bt,bm); this.fadeIn(bm,0.95); }
+  }
+  colorStruct(geo,mat,sel,n){ const THREE=this.three.THREE;
+    if(this.state.confidence&&sel.predicted){ const posA=geo.attributes.position,cols=new Float32Array(posA.count*3),rng=this.mulberry(this.hashId(sel.id)+3);
+      for(let i=0;i<posA.count;i++){const f=i/posA.count,edge=Math.min(f,1-f);let cf=0.32+edge*1.25+(rng()-0.5)*0.18;cf=Math.max(0.05,Math.min(0.95,cf));const c=this.confColor(cf);cols[i*3]=c[0];cols[i*3+1]=c[1];cols[i*3+2]=c[2];}
+      geo.setAttribute('color',new THREE.BufferAttribute(cols,3));mat.vertexColors=true;mat.needsUpdate=true;return; }
+    if(this.state.colorMode==='domain'){ const th=this.THEMES[this.state.theme],posA=geo.attributes.position,cols=new Float32Array(posA.count*3),nd=sel.domains.length;
+      for(let i=0;i<posA.count;i++){const di=Math.min(nd-1,Math.floor(i/posA.count*nd));const c=new THREE.Color(this.mix(th.fam[sel.fam],th.fog,(di%2)*0.4));cols[i*3]=c.r;cols[i*3+1]=c.g;cols[i*3+2]=c.b;}
+      geo.setAttribute('color',new THREE.BufferAttribute(cols,3));mat.vertexColors=true;mat.needsUpdate=true; } }
+  confColor(v){ const s=[[0,[0.91,0.38,0.16]],[0.4,[0.91,0.66,0.22]],[0.6,[0.37,0.78,0.84]],[1,[0.18,0.43,0.88]]];
+    for(let i=0;i<s.length-1;i++){ if(v<=s[i+1][0]){const a=s[i],b=s[i+1],t=(v-a[0])/(b[0]-a[0]);return a[1].map((c,j)=>c+(b[1][j]-c)*t);} } return s[3][1]; }
+  fadeIn(m,to){ m.userData.to=to; m.userData.t=0; }
+
+  // ---- threads ----
+  buildThreads(sel){ const t=this.three,THREE=t.THREE,g=t.threadGroup;
+    while(g.children.length){const c=g.children.pop();c.geometry&&c.geometry.dispose();c.material&&c.material.dispose();}
+    const list=this.THREADS[sel.id]||[]; const from=t.marker.position;
+    list.forEach((th,i)=>{ const c=t.centres[th.tfam]; const rng=this.mulberry(this.hashId(sel.id+th.acc));
+      const end=c.clone().add(new THREE.Vector3((rng()-0.5)*90,(rng()-0.5)*70,(rng()-0.5)*90));
+      const mid=from.clone().add(end).multiplyScalar(0.5); mid.y+=40+i*10;
+      const cv=new THREE.QuadraticBezierCurve3(from.clone(),mid,end);
+      const geo=new THREE.BufferGeometry().setFromPoints(cv.getPoints(48));
+      const line=new THREE.Line(geo,new THREE.LineBasicMaterial({color:this.REL_COLORS[th.type]||'#888',transparent:true,opacity:0})); line.userData.i=i; g.add(line);
+      const dot=new THREE.Mesh(new THREE.SphereGeometry(2.2,10,10),new THREE.MeshBasicMaterial({color:this.REL_COLORS[th.type]||'#888',transparent:true,opacity:0})); dot.position.copy(end); dot.userData.i=i; g.add(dot); });
+    this.updateThreads(); }
+  updateThreads(){ const t=this.three; if(!t) return; const on=this.state.threadsOn && (this.state.view==='glance'); }
+
+  // ---- sequence ----
+  genSeq(id,len){ const aa='ACDEFGHIKLMNPQRSTVWY'; const w='LLAAGGVVEESSKKIITTDDRRPPNNFFQQYYHHMMCCWW'; const rng=this.mulberry(this.hashId(id)+11); let s=''; for(let i=0;i<len;i++) s+=w[Math.floor(rng()*w.length)]; return s; }
+  ssFor(id,len){ const rng=this.mulberry(this.hashId(id)+5); const out=new Array(len); let i=0; while(i<len){ const r=rng(); let type=r<0.4?'H':(r<0.7?'E':'C'); let run=type==='C'?2+Math.floor(rng()*4):6+Math.floor(rng()*9); for(let k=0;k<run&&i<len;k++,i++) out[i]=type; } return out; }
+  renderSequence(){ const el=this.seqRef.current, sel=this.state.sel; if(!el||!sel) return;
+    const th=this.THEMES[this.state.theme];
+    if(sel.residues>4000){ // titin: virtualized domain overview
+      el.innerHTML='';
+      const note=document.createElement('div'); note.style.cssText='font-family:Spectral,serif;font-style:italic;font-size:13px;color:var(--ink-soft);margin-bottom:12px';
+      note.textContent=sel.residues.toLocaleString()+' residues — rendering the full chain as one line would be unreadable. Navigate by domain; residue-level sequence streams from UniProt on zoom.';
+      el.appendChild(note);
+      const track=document.createElement('div'); track.style.cssText='display:flex;height:26px;border:1px solid var(--glass-brd);border-radius:2px;overflow:hidden';
+      const rng=this.mulberry(99); const nseg=40; for(let i=0;i<nseg;i++){ const seg=document.createElement('div'); const isIg=rng()<0.7; seg.title=(isIg?'Ig domain':'FnIII domain')+' '+(i+1); seg.style.cssText='flex:1;height:100%;background:'+(isIg?this.mix(th.fam[2],th.fog,0.1):this.mix(th.fam[2],th.fog,0.5))+';border-right:1px solid var(--bg)'; track.appendChild(seg); }
+      el.appendChild(track);
+      const mm=document.createElement('div'); mm.style.cssText='font-family:"IBM Plex Mono",monospace;font-size:9px;color:var(--ink-faint);margin-top:8px;display:flex;justify-content:space-between'; mm.innerHTML='<span>Z-disc · 1</span><span>PEVK elastic region</span><span>M-line · 34,350</span>'; el.appendChild(mm);
+      return; }
+    const seq = sel.seqReal ? this.SEQ[sel.id] : this.genSeq(sel.id, sel.residues);
+    const L=seq.length; const ss=this.ssFor(sel.id,L); const nd=sel.domains.length;
+    const domColAt=(i)=>{ const di=Math.min(nd-1,Math.floor(i/L*nd)); return sel.domains[di].color; };
+    const sa=this.state.seqSel; const inSel=(i)=>sa && i>=sa.a && i<=sa.b;
+    el.innerHTML='';
+    const wrap=document.createElement('div'); wrap.style.cssText='font-family:"IBM Plex Mono",monospace;font-size:12px;line-height:1.9;letter-spacing:1px;user-select:none';
+    // build rows of 10, grouped, with numbering
+    const per=Math.min(60,Math.max(30,Math.floor((el.clientWidth-40)/11)));
+    for(let start=0;start<L;start+=per){ const row=document.createElement('div'); row.style.cssText='display:flex;align-items:center;gap:10px;white-space:nowrap';
+      const num=document.createElement('span'); num.style.cssText='color:var(--ink-faint);font-size:9.5px;width:44px;text-align:right;flex:none'; num.textContent=(start+1); row.appendChild(num);
+      const line=document.createElement('span'); line.style.whiteSpace='nowrap';
+      for(let i=start;i<Math.min(L,start+per);i++){ const c=document.createElement('span'); c.className='hx-res'+(inSel(i)?' sel':''); c.dataset.i=i;
+        c.style.color=inSel(i)?'#fff':domColAt(i); c.style.borderBottom='2px solid '+(ss[i]==='H'?'var(--ss-h)':ss[i]==='E'?'var(--ss-e)':'var(--ss-c)');
+        c.textContent=seq[i]; line.appendChild(c); }
+      row.appendChild(line); wrap.appendChild(row); }
+    el.appendChild(wrap);
+    if(!sel.seqReal){ const rep=document.createElement('div'); rep.style.cssText='font-family:"IBM Plex Mono",monospace;font-size:9px;color:var(--ink-faint);margin-top:10px;line-height:1.5'; rep.textContent='Representative sequence shown for layout. Canonical residues stream from UniProt '+sel.id+' in production.'; el.appendChild(rep); }
+    // drag selection
+    let dragging=false, da=null;
+    const idxOf=(t)=>{ let n=t; while(n&&!n.dataset.i) n=n.parentElement; return n?parseInt(n.dataset.i):null; };
+    wrap.addEventListener('mousedown',(e)=>{ const i=idxOf(e.target); if(i==null) return; dragging=true; da=i; this.setSeqSel(i,i); e.preventDefault(); });
+    wrap.addEventListener('mousemove',(e)=>{ if(!dragging) return; const i=idxOf(e.target); if(i==null) return; this.setSeqSel(Math.min(da,i),Math.max(da,i)); });
+    window.addEventListener('mouseup',()=>{dragging=false;},{once:true});
+  }
+  setSeqSel(a,b){ this.setState({seqSel:{a,b}}); this.highlightRange(a,b); }
+  highlightRange(a,b){ const t=this.three; if(!t||!this._curve) return; const mid=(a+b)/2/Math.max(1,(this.state.sel.residues-1));
+    const p=this._curve.getPoint(Math.max(0,Math.min(1,mid))); t.selSphere.position.copy(p); t.selSphere.visible=(this.state.view==='inspect'); }
+  pickResidueFromStructure(e){ const t=this.three; if(!t||!this._curve) return; const n=this.ndc(e); t.ray.setFromCamera({x:n.x,y:n.y},t.camera);
+    const meshes=t.structGroup.children.filter(c=>c!==t.selSphere); const hit=t.ray.intersectObjects(meshes,true); if(!hit.length) return;
+    const local=hit[0].point.clone().sub(t.structGroup.position); let bestT=0,bd=1e9; for(let s=0;s<=1;s+=0.01){const p=this._curve.getPoint(s);const d=p.distanceTo(local);if(d<bd){bd=d;bestT=s;}}
+    const ri=Math.round(bestT*(this.state.sel.residues-1)); if(!this.state.seqOpen) this.setState({seqOpen:true});
+    this.setSeqSel(ri,ri); this.playCue('tick'); }
+
+  // ---- design journey ----
+  onStartDesign(){ const sel=this.state.sel; if(!sel) return;
+    if(this.state.view!=='inspect'){ this.onInspect(); }
+    this.setState({design:{stage:0,candidate:null},view:'design',seqOpen:false},()=>{ this.buildStructure(this.state.sel); });
+    this.applySnap({tgt:this.three.marker.position.clone(),r:100,theta:this.cam.theta+0.4,phi:1.0},1400);
+    this.cam.r=100; this.cam.theta=this.cam.theta+0.4; this.cam.phi=1.0; this.playCue('enter'); }
+  onDesignNext(){ const d=this.state.design; if(!d) return; if(d.stage>=this.DESIGN_STAGES.length-1){ this.onExitDesign(); return; }
+    this.setState({design:{...d,stage:d.stage+1}},()=>this.buildStructure(this.state.sel)); this.playCue('tick'); }
+  onDesignBack(){ const d=this.state.design; if(!d) return; if(d.stage<=0){ this.onExitDesign(); return; } this.setState({design:{...d,stage:d.stage-1}},()=>this.buildStructure(this.state.sel)); this.playCue('back'); }
+  onExitDesign(){ this.setState({design:null,view:'inspect'},()=>this.buildStructure(this.state.sel)); this.playCue('back'); }
+  pickCandidate(i){ const d=this.state.design; this.setState({design:{...d,candidate:i,stage:d.stage+1}},()=>this.buildStructure(this.state.sel)); this.playCue('select'); }
+
+  onInspect(){ const sel=this.state.sel; if(!sel) return;
+    this.levelCam.protein=this.snap();
+    this.setState({view:'inspect',atlas:null}); this.buildStructure(sel);
+    const p=this.three.marker.position.clone();
+    this.applySnap({tgt:p,r:90,theta:this.cam.theta+0.5,phi:1.02},1500);
+    this.cam.r=90; this.cam.theta=this.cam.theta+0.5; this.cam.phi=1.02; this._dimTarget=0.24;
+    this.three.marker.visible=false; this.playCue('enter'); }
+
+  onReturn(){ const v=this.state.view;
+    if(v==='design'){ this.onExitDesign(); return; }
+    if(v==='inspect'){ const t=this.three; for(let i=t.structGroup.children.length-1;i>=0;i--){const c=t.structGroup.children[i];if(c===t.selSphere)continue;c.geometry&&c.geometry.dispose();t.structGroup.remove(c);} t.selSphere.visible=false; t.marker.visible=true;
+      this.setState({view:'glance',seqOpen:false}); if(this.levelCam.protein) this.applySnap(this.levelCam.protein,1300); this._dimTarget=0.6; this.playCue('back'); return; }
+    if(v==='glance'){ if(this.state.territory!=null && this.levelCam.territory){ this.backToTerritory(); } else this.returnUniverse(); return; }
+    if(v==='territory'){ this.returnUniverse(); return; } }
+  backToTerritory(){ const t=this.three; t.marker.visible=false;
+    this.setState({view:'territory',sel:null,threadsOn:false}); t.mat.uniforms.uFamFocus.value=1; t.mat.uniforms.uActiveFam.value=this.state.territory;
+    if(this.levelCam.territory) this.applySnap(this.levelCam.territory,1300); this._dimTarget=1; this.playCue('back'); }
+  returnUniverse(){ const t=this.three; if(t){ t.marker.visible=false; t.selSphere.visible=false; for(let i=t.structGroup.children.length-1;i>=0;i--){const c=t.structGroup.children[i];if(c===t.selSphere)continue;t.structGroup.remove(c);} while(t.threadGroup.children.length){t.threadGroup.children.pop();}
+      for(let i=0;i<t.N;i++){t.match[i]=0;t.tgt[i*3]=t.base[i*3];t.tgt[i*3+1]=t.base[i*3+1];t.tgt[i*3+2]=t.base[i*3+2];} t.geo.attributes.aMatch.needsUpdate=true; t.mat.uniforms.uFamFocus.value=0;
+      this.reflow={t0:performance.now(),dur:1300}; }
+    this.setState({view:'universe',sel:null,territory:null,queryActive:false,threadsOn:false,seqOpen:false,design:null,atlas:null});
+    if(this.levelCam.universe) this.applySnap(this.levelCam.universe,1500); else { this.applySnap({tgt:new this.three.THREE.Vector3(0,0,0),r:640,theta:this.cam.theta,phi:1.12},1500); }
+    this._dimTarget=1; this.playCue('back'); }
+  onHome(){ if(this.state.view!=='universe'){ this.levelCam={}; this.clearQuery(true); this.returnUniverse(); } }
+
+  navTo(key){ const S=this.state;
+    if(key==='universe') this.returnUniverse();
+    else if(key==='territory'){ if(S.territory!=null){ if(S.view==='glance'||S.view==='inspect'||S.view==='design') this.backToTerritory(); } }
+    else if(key==='protein'){ if(S.sel){ if(S.view==='inspect'||S.view==='design') this.onReturn(); } }
+    else if(key==='structure'){ if(S.sel && S.view==='glance') this.onInspect(); } }
+
+  // ---- query (deterministic) ----
+  QMAP={membrane:3,receptor:3,gpcr:3,rhodopsin:3,channel:3,transport:0,oxygen:0,globin:0,hemoglobin:0,haemoglobin:0,kinase:1,signal:1,hormone:1,insulin:1,muscle:2,titin:2,structural:2,sarcomere:2,nuclear:4,nucleol:4,dna:4,rna:4,enzyme:5,metabol:5,fluor:5,gfp:5};
+  onQueryInput(e){ this.setState({query:e.target.value}); }
+  onQueryKey(e){ if(e.key==='Enter') this.runQuery(this.state.query); if(e.key==='Escape') this.clearQuery(); }
+  onQuerySubmit(){ this.runQuery(this.state.query); }
+  runQuery(q){ if(!q||!q.trim()) return; const key=q.toLowerCase(); let fi=-1; for(const k in this.QMAP){ if(key.includes(k)){fi=this.QMAP[k];break;} } if(fi<0) fi=Math.floor(Math.random()*this.FAMS.length);
+    const t=this.three,THREE=t.THREE,c=t.centres[fi],pull=new THREE.Vector3(0,10,150);
+    for(let i=0;i<t.N;i++){ const f=t.famOf[i],bx=t.base[i*3],by=t.base[i*3+1],bz=t.base[i*3+2];
+      if(f===fi){ t.match[i]=1; t.tgt[i*3]=bx-c.x+pull.x; t.tgt[i*3+1]=by-c.y+pull.y; t.tgt[i*3+2]=bz-c.z+pull.z; }
+      else { t.match[i]=0; const d=new THREE.Vector3(bx,by,bz).normalize().multiplyScalar(140); t.tgt[i*3]=bx+d.x; t.tgt[i*3+1]=by+d.y; t.tgt[i*3+2]=bz+d.z; } }
+    t.geo.attributes.aMatch.needsUpdate=true; t.marker.visible=false; t.mat.uniforms.uFamFocus.value=0;
+    this.reflow={t0:performance.now(),dur:1500};
+    const fam=this.FAMS[fi];
+    this.setState({queryActive:true,commandOpen:false,sel:null,view:'universe',territory:null,
+      queryFilter:fam.name, queryCount:fam.count.toLocaleString()+' of 75,000 visible · '+Math.round(fam.count*7.68).toLocaleString()+' of 575,503 indexed'});
+    this.applySnap({tgt:new THREE.Vector3(0,10,120),r:380,theta:0.4,phi:1.12},1500);
+    this.cam.tgt.set(0,10,120); this.cam.r=380; this.cam.theta=0.4; this.cam.phi=1.12;
+    this._queryFam=fi; this._dimTarget=1; this.playCue('query'); if(this.searchRef.current) this.searchRef.current.blur(); }
+  onClearQuery(){ this.clearQuery(); }
+  clearQuery(silent){ const t=this.three; if(t){ for(let i=0;i<t.N;i++){t.match[i]=0;t.tgt[i*3]=t.base[i*3];t.tgt[i*3+1]=t.base[i*3+1];t.tgt[i*3+2]=t.base[i*3+2];} t.geo.attributes.aMatch.needsUpdate=true; this.reflow={t0:performance.now(),dur:1200}; }
+    this.setState({queryActive:false,query:'',queryFilter:'',queryCount:''}); if(!silent && t) this.applySnap({tgt:new t.THREE.Vector3(0,0,0),r:600,theta:this.cam.theta,phi:1.12},1300); }
+
+  // ---- Ask Atlas (semantic scene control) ----
+  onCommandInput(e){ this.setState({command:e.target.value}); }
+  onCommandKey(e){ if(e.key==='Enter') this.askAtlas(this.state.command); if(e.key==='Escape') this.setState({commandOpen:false}); }
+  onOpenCommand(){ this.setState({commandOpen:true},()=>setTimeout(()=>this.commandRef.current&&this.commandRef.current.focus(),40)); }
+  onCloseCommand(){ this.setState({commandOpen:false}); }
+  onDismissAtlas(){ this.setState({atlas:null}); }
+  askAtlas(q){ if(!q||!q.trim()) return; const k=q.toLowerCase(); const sel=this.state.sel; let answer='',trace=[];
+    if((k.includes('why')&&k.includes('neighb'))||k.includes('related')||k.includes('homolog')){ if(sel){ this.setState({threadsOn:true}); trace=['scene.revealThreads('+sel.id+')','camera.hold()']; const th=(this.THREADS[sel.id]||[])[0]; answer=th?(sel.name+' and '+th.name+' are linked by '+th.type.toLowerCase()+': '+th.basis):'Relationship threads revealed for the selected protein.'; }
+      else { answer='Select a protein first, then I can trace its relationships.'; trace=['scene.noSelection()']; } }
+    else if(k.includes('confidence')||k.includes('low-confidence')||k.includes('plddt')){ if(sel&&sel.predicted){ if(this.state.view!=='inspect') this.onInspect(); this.setState({confidence:true},()=>this.buildStructure(this.state.sel)); trace=['scene.enterStructure('+sel.id+')','structure.setColoring(pLDDT)']; answer='Confidence X-ray enabled. Orange marks low-pLDDT, disordered regions; blue marks confident core.'; }
+      else if(sel){ answer=sel.name+' is an experimental structure — prediction confidence is undefined here. Method: '+sel.method+', '+sel.resolution+'.'; trace=['scene.checkEvidence('+sel.id+')']; } else { answer='Select a predicted structure to inspect confidence.'; trace=['scene.noSelection()']; } }
+    else if(k.includes('design')||k.includes('binder')){ if(sel){ trace=['scene.startDesign('+sel.id+')']; answer='Opening the design trajectory from '+sel.name+'. This is a precomputed exploration, not live computation.'; this.setState({commandOpen:false},()=>this.onStartDesign()); }
+      else { answer='Select a target protein first to begin a design trajectory.'; trace=['scene.noSelection()']; } }
+    else if(k.includes('inspect')||k.includes('structure')){ if(sel){ this.onInspect(); trace=['scene.enterStructure('+sel.id+')']; answer='Entering structure inspection for '+sel.name+'.'; } else { answer='Select a protein first.'; trace=['scene.noSelection()']; } }
+    else { let fi=-1; for(const key in this.QMAP){ if(k.includes(key)){fi=this.QMAP[key];break;} } if(fi>=0){ this.runQuery(q); trace=['scene.filter(family: '+this.FAMS[fi].name+')','camera.frame(territory)']; answer='Reorganised the universe around '+this.FAMS[fi].name.toLowerCase()+'. '+this.FAMS[fi].count.toLocaleString()+' proteins pulled forward.'; }
+      else { answer='I move the scene to answer questions about proteins, families, confidence and relationships. Try naming a family, or select a protein and ask why its neighbours relate.'; trace=['atlas.clarify()']; } }
+    this.setState({command:'',commandOpen:false,atlas:{answer,trace}});
+    clearTimeout(this._atlasT); this._atlasT=setTimeout(()=>{ if(this.mounted && this.state.atlas && this.state.atlas.answer===answer) this.setState({atlas:null}); },9000);
+    this.playCue('query'); }
+
+  onKey(e){ if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){ e.preventDefault(); this.setState(s=>({commandOpen:!s.commandOpen}),()=>{ if(this.state.commandOpen) setTimeout(()=>this.commandRef.current&&this.commandRef.current.focus(),40); }); return; }
+    if(e.key==='Escape'){ if(this.state.commandOpen) this.setState({commandOpen:false}); else if(this.state.seqOpen) this.setState({seqOpen:false}); else if(this.state.view!=='universe') this.onReturn(); else if(this.state.queryActive) this.clearQuery(); } }
+
+  onGlance(){ this.setState({tier:'glance'}); }
+  onLearn(){ this.setState({tier:'learn'}); }
+  onToggleThreads(){ this.setState(s=>({threadsOn:!s.threadsOn})); this.playCue('tick'); }
+  threadHover(i){ this._hoverThread=i; }
+  onOpenSeq(){ this.setState({seqOpen:true}); }
+  onCloseSeq(){ this.setState({seqOpen:false}); }
+  setRep(r){ if(this.state.rep===r) return; this.setState({rep:r},()=>this.buildStructure(this.state.sel)); this.playCue('tick'); }
+  onColorMode(){ this.setState(s=>({colorMode:s.colorMode==='chain'?'domain':'chain'}),()=>this.buildStructure(this.state.sel)); this.playCue('tick'); }
+  toggleConfidence(){ this.setState(s=>({confidence:!s.confidence}),()=>this.buildStructure(this.state.sel)); this.playCue('tick'); }
+  toggleLigands(){ this.setState(s=>({ligands:!s.ligands}),()=>this.buildStructure(this.state.sel)); this.playCue('tick'); }
+  onToggleTheme(){ this.setState(s=>({theme:s.theme==='light'?'dark':'light'}),()=>this.applyTheme()); }
+  onToggleSound(){ this.setState(s=>({sound:!s.sound})); if(!this.audio) this.initAudio(); }
+  initAudio(){ try{ this.audio=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} }
+  playCue(type){ if(!this.state.sound||!this.audio) return; try{ const a=this.audio,o=a.createOscillator(),g=a.createGain();
+    const f={select:520,enter:340,query:440,back:300,tick:660,deny:180}[type]||440; o.frequency.value=f; o.type='sine'; g.gain.value=0.0001; o.connect(g); g.connect(a.destination); const n=a.currentTime;
+    g.gain.exponentialRampToValueAtTime(0.045,n+0.01); g.gain.exponentialRampToValueAtTime(0.0001,n+0.28); o.start(n); o.stop(n+0.3); }catch(e){} }
+
+  startTween(to,dur){ this.tween={t0:performance.now(),dur,from:{tgt:this.now.tgt.clone(),r:this.now.r,theta:this.now.theta,phi:this.now.phi},to:{tgt:to.tgt.clone(),r:to.r,theta:to.theta,phi:to.phi}}; }
+  ease(t){ return t<0.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2; }
+
+  buildLabels(){ const wrap=this.labelsRef.current; if(!wrap) return; wrap.innerHTML=''; this.labelEls={}; this.terrEls={};
+    // territory labels
+    this.FAMS.forEach((f,fi)=>{ const d=document.createElement('div'); d.style.cssText='position:absolute;transform:translate(-50%,-50%);white-space:nowrap;transition:opacity .5s;pointer-events:auto;cursor:pointer;text-align:center';
+      d.innerHTML='<div style="font-family:\'IBM Plex Mono\',monospace;font-size:8.5px;letter-spacing:.24em;color:var(--ink-faint)">TERRITORY '+String(fi+1).padStart(2,'0')+'</div><div style="font-family:Spectral,serif;font-size:16px;color:var(--ink);margin-top:2px">'+f.name+'</div><div style="font-family:\'IBM Plex Mono\',monospace;font-size:8px;letter-spacing:.1em;color:var(--teal);margin-top:2px;opacity:0" class="terr-enter">ENTER ›</div>';
+      d.addEventListener('click',()=>{ if(this.state.view==='universe'||this.state.view==='territory') this.enterTerritory(fi); });
+      d.addEventListener('mouseenter',()=>{ d.querySelector('.terr-enter').style.opacity='1'; this.playCue('tick'); });
+      d.addEventListener('mouseleave',()=>{ d.querySelector('.terr-enter').style.opacity='0'; });
+      wrap.appendChild(d); this.terrEls[fi]=d; });
+    // hero labels
+    this.HEROES.forEach(h=>{ const d=document.createElement('div'); d.style.cssText='position:absolute;transform:translate(-50%,-150%);white-space:nowrap;transition:opacity .4s;pointer-events:none';
+      d.innerHTML='<div style="font-family:\'IBM Plex Mono\',monospace;font-size:9px;letter-spacing:.16em;color:var(--ink-faint)">'+h.id+'</div><div style="font-family:Spectral,serif;font-size:12px;color:var(--ink);margin-top:1px">'+h.name+'</div>';
+      wrap.appendChild(d); this.labelEls[h.id]=d; }); }
+
+  loop(){ this._raf=requestAnimationFrame(()=>this.loop()); const t=this.three; if(!t) return; const THREE=t.THREE; const reduce=!!this.props.reduceMotion;
+    if(this.tween){ const tw=this.tween; let k=(performance.now()-tw.t0)/tw.dur; if(k>=1){k=1;this.tween=null;} const e=this.ease(k);
+      this.now.tgt.lerpVectors(tw.from.tgt,tw.to.tgt,e); this.now.r=tw.from.r+(tw.to.r-tw.from.r)*e; this.now.theta=tw.from.theta+(tw.to.theta-tw.from.theta)*e; this.now.phi=tw.from.phi+(tw.to.phi-tw.from.phi)*e;
+      this.cam.tgt.copy(this.now.tgt); this.cam.r=this.now.r; this.cam.theta=this.now.theta; this.cam.phi=this.now.phi;
+    } else { const k=reduce?1:0.09; this.now.tgt.lerp(this.cam.tgt,k); this.now.r+=(this.cam.r-this.now.r)*k; this.now.theta+=(this.cam.theta-this.now.theta)*k; this.now.phi+=(this.cam.phi-this.now.phi)*k;
+      if((this.state.view==='universe'||this.state.view==='territory')&&!reduce && (performance.now()-this.lastAct)>3500){ this.cam.theta+=0.00022; } }
+    const s=this.now,sp=s.phi,st=s.theta;
+    t.camera.position.set(s.tgt.x+s.r*Math.sin(sp)*Math.cos(st),s.tgt.y+s.r*Math.cos(sp),s.tgt.z+s.r*Math.sin(sp)*Math.sin(st)); t.camera.lookAt(s.tgt);
+    if(this._dimTarget!=null){ const c=t.mat.uniforms.uDim.value; t.mat.uniforms.uDim.value=c+(this._dimTarget-c)*0.08; }
+    const th=this.THEMES[this.state.theme]; const dnt=this.state.queryActive?th.dimNon:(t.mat.uniforms.uFamFocus.value>0.5?th.dimNon:1);
+    t.mat.uniforms.uDimNon.value+=(dnt-t.mat.uniforms.uDimNon.value)*0.08;
+    if(this.reflow){ let k=(performance.now()-this.reflow.t0)/this.reflow.dur; if(k>=1){k=1;this.reflow=null;} const pos=t.geo.attributes.position.array; for(let i=0;i<t.N*3;i++) pos[i]+=(t.tgt[i]-pos[i])*0.08; t.geo.attributes.position.needsUpdate=true; }
+    if(t.marker.visible){ const d=t.camera.position.distanceTo(t.marker.position); t.marker.scale.setScalar(d*0.09); const m=t.marker.material; m.opacity=0.7+Math.sin(performance.now()*0.004)*0.3; }
+    // threads visibility
+    const showThreads=this.state.threadsOn&&this.state.view==='glance';
+    t.threadGroup.children.forEach(o=>{ const base=o.type==='Line'?0.5:0.9; const emph=(o.userData.i===this._hoverThread)?1:0.42; o.material.opacity+=(((showThreads?base*emph:0))-o.material.opacity)*0.15; });
+    if(t.structGroup.children.length>1){ if(!reduce) t.structGroup.rotation.y+=0.0015; t.structGroup.traverse(o=>{ if(o.material&&o.material.userData&&o.material.userData.to!=null){ o.material.userData.t=Math.min(1,o.material.userData.t+0.05); o.material.opacity=o.material.userData.to*o.material.userData.t; } }); }
+    // labels
+    const cam=t.camera,v=new THREE.Vector3(),el=this.canvasRef.current,w=el.clientWidth,h=el.clientHeight;
+    if(this.terrEls){ const showT=this.state.view==='universe'||this.state.view==='territory'; this.FAMS.forEach((f,fi)=>{ const d=this.terrEls[fi]; if(!d) return; const c=t.centres[fi]; v.copy(c); v.project(cam);
+      const onscreen=v.z<1&&Math.abs(v.x)<1.05&&Math.abs(v.y)<1.05; let op=0; if(showT&&onscreen){ op=1; if(this.state.queryActive) op=(fi===this._queryFam)?1:0.16; if(this.state.view==='territory') op=(fi===this.state.territory)?1:0.12; d.style.left=((v.x*0.5+0.5)*w)+'px'; d.style.top=((-v.y*0.5+0.5)*h)+'px'; }
+      d.style.opacity=op; d.style.pointerEvents=op>0.5?'auto':'none'; d.style.display=(showT&&onscreen)?'block':'none'; }); }
+    if(this.labelEls){ const showH=this.state.view==='universe'||this.state.view==='territory'||this.state.view==='glance'; this.HEROES.forEach(hh=>{ const d=this.labelEls[hh.id]; if(!d) return; v.set(t.base[hh._pi*3],t.base[hh._pi*3+1],t.base[hh._pi*3+2]); v.project(cam);
+      let vis=showH&&v.z<1&&Math.abs(v.x)<1.05&&Math.abs(v.y)<1.05; if(this.state.view==='territory') vis=vis&&hh.fam===this.state.territory; if(this.state.view==='glance') vis=vis&&this.state.sel&&hh.id===this.state.sel.id;
+      if(vis){ d.style.left=((v.x*0.5+0.5)*w)+'px'; d.style.top=((-v.y*0.5+0.5)*h)+'px'; let op=1; if(this.state.queryActive) op=(hh.fam===this._queryFam)?1:0.12; d.style.opacity=op; d.style.display='block'; } else d.style.display='none'; }); }
+    t.renderer.render(t.scene,t.camera); }
+
+  // ============ RENDER VALS ============
+  renderVals(){ try{ window.__heli=this; }catch(e){} const S=this.state, light=S.theme==='light';
+    const T = light ? { bg:'#efece4',ink:'#22262b',inkSoft:'#5c6169',inkFaint:'#948b7d',line:'rgba(34,38,43,.12)',teal:'#0c8c78',onAccent:'#f4f1ea',
+        glass:'rgba(243,241,234,.72)',glassBrd:'rgba(34,38,43,.16)',
+        scrimTop:'linear-gradient(180deg,rgba(239,236,228,.9),rgba(239,236,228,0))',scrimBot:'linear-gradient(0deg,rgba(239,236,228,.82),rgba(239,236,228,0))',
+        vignette:'radial-gradient(125% 95% at 50% 40%,rgba(255,255,255,0) 42%,rgba(120,110,90,.10) 100%)',
+        loadBg:'#efece4',scrim:'rgba(230,227,218,.5)',bgGrad:'radial-gradient(125% 100% at 50% 40%,#f6f4ee 0%,#ece8df 55%,#dcd7cb 100%)' }
+      : { bg:'#0d1013',ink:'#e9e7e0',inkSoft:'#a2a6ab',inkFaint:'#6a6f75',line:'rgba(233,231,224,.12)',teal:'#34d6b8',onAccent:'#0d1013',
+        glass:'rgba(17,20,24,.66)',glassBrd:'rgba(233,231,224,.15)',
+        scrimTop:'linear-gradient(180deg,rgba(13,16,19,.92),rgba(13,16,19,0))',scrimBot:'linear-gradient(0deg,rgba(13,16,19,.86),rgba(13,16,19,0))',
+        vignette:'radial-gradient(125% 95% at 50% 38%,rgba(60,80,100,.06) 0%,rgba(0,0,0,.55) 100%)',
+        loadBg:'#0d1013',scrim:'rgba(6,8,10,.55)',bgGrad:'radial-gradient(125% 100% at 50% 38%,#15191e 0%,#0d1013 60%,#070809 100%)' };
+    const ssH=light?'#3f6f60':'#5fc6a6', ssE=light?'#8f4a44':'#d68b83', ssC=light?'rgba(34,38,43,.25)':'rgba(233,231,224,.25)';
+    const rootStyle=`position:fixed;inset:0;overflow:hidden;background:${T.bgGrad};`+
+      `--bg:${T.bg};--ink:${T.ink};--ink-soft:${T.inkSoft};--ink-faint:${T.inkFaint};--line:${T.line};--teal:${T.teal};--on-accent:${T.onAccent};`+
+      `--glass:${T.glass};--glass-brd:${T.glassBrd};--scrim-top:${T.scrimTop};--scrim-bot:${T.scrimBot};--vignette:${T.vignette};--load-bg:${T.loadBg};--scrim:${T.scrim};`+
+      `--ss-h:${ssH};--ss-e:${ssE};--ss-c:${ssC};`;
+
+    const sel=S.sel; let selView=null;
+    if(sel){ const learnRows=[{k:'BIOLOGICAL PROCESS',v:sel.process},{k:'CELLULAR LOCATION',v:sel.location},{k:'PATHWAY',v:sel.pathway||'—'},{k:'HOMOLOGUES',v:sel.homologues}];
+      if(sel.disease && sel.disease!=='—') learnRows.push({k:'DISEASE RELEVANCE',v:sel.disease});
+      const threads=(this.THREADS[sel.id]||[]).map((th,i)=>({name:th.name,acc:th.acc,type:th.type,statusTag:th.status.toUpperCase()+' · '+Math.round(th.strength*100)+'%',basis:th.basis,color:this.REL_COLORS[th.type]||'#888',
+        bg:(this._hoverThread===i)?'var(--line)':'transparent', hover:()=>this.threadHover(i), unhover:()=>this.threadHover(-1)}));
+      selView={...sel, evTint:sel.predicted?'#c9922f':T.teal, evRadius:sel.predicted?'50%':'0',
+        rows:sel.rows, learnRows, domainList:sel.domains.map(d=>({label:d.label,color:d.color,range:d.range})), threads, refs:sel.refs}; }
+
+    // depth rail
+    const curLevel = S.view==='inspect'||S.view==='design'?4 : S.view==='glance'?3 : S.view==='territory'?1 : S.queryActive?1 : 0;
+    const LV=[['universe','UNIVERSE'],['territory','TERRITORY'],['neighbourhood','NEIGHBOURHOOD'],['protein','PROTEIN'],['structure','STRUCTURE']];
+    const levels=LV.map(([key,label],i)=>{ const active=i===curLevel; const reachable=i<curLevel; let sub='';
+      if(key==='territory'&&S.territory!=null) sub=this.FAMS[S.territory].name; if(key==='protein'&&sel) sub=sel.name; if(key==='structure'&&sel&&(S.view==='inspect'||S.view==='design')) sub=(S.view==='design'?'Design · ':'')+sel.pdb;
+      return {label, sub, subDisplay:sub?'block':'none', go:()=>this.navTo(key), cursor:(reachable||active)?'pointer':'default',
+        color:active?'var(--ink)':(reachable?'var(--ink-soft)':'var(--ink-faint)'), dot:active?'var(--teal)':(reachable?'var(--ink-soft)':'transparent'), ring:active?'var(--teal)':'var(--glass-brd)'}; });
+
+    const reps=[['cartoon','CARTOON'],['surface','SURFACE'],['ball','BALL & STICK'],['spacefill','SPACEFILL']].map(([k,label])=>{ const on=S.rep===k; return {label,set:()=>this.setRep(k),border:on?'var(--teal)':'var(--glass-brd)',color:on?T.onAccent:'var(--ink)',bg:on?'var(--teal)':'transparent'}; });
+    const suggestions=[['membrane receptors','membrane receptors'],['oxygen transport','oxygen transport'],['muscle · titin','muscle'],['fluorescent · GFP','fluorescent']].map(([label,q])=>({label,run:()=>{this.setState({query:q});this.runQuery(q);}}));
+    const atlasSuggest=[['why are these neighbours?','why neighbours'],['highlight low-confidence','low-confidence'],['design a binder','design binder']].map(([label,q])=>({label,run:()=>this.askAtlas(q)}));
+
+    const predicted=sel&&sel.predicted;
+    const structRows=sel?[{k:'SOURCE',v:sel.predicted?'AlphaFold DB':'RCSB PDB '+sel.pdb},{k:'METHOD',v:sel.method},{k:'RESOLUTION',v:sel.resolution},{k:'CHAINS',v:sel.chains}]:[];
+
+    // design
+    let designStages=[],designStageTag='',designStageBody='',designMetrics=[],candidates=[],designNextLabel='NEXT →',showDesignMetrics=false,showCompare=false,designProvenance='';
+    if(S.design){ const stg=S.design.stage;
+      designStages=this.DESIGN_STAGES.map((l,i)=>({label:l,color:i===stg?'var(--ink)':(i<stg?'var(--ink-soft)':'var(--ink-faint)'),dot:i<stg?'var(--teal)':(i===stg?'var(--teal)':'transparent'),ring:i<=stg?'var(--teal)':'var(--glass-brd)'}));
+      const bodies=[
+        'Target locked: '+sel.name+' ('+sel.id+'). We design a de-novo binder against a defined surface of this structure.',
+        'Objective: a compact single-domain binder with high shape complementarity and low predicted off-target affinity.',
+        'Binding site selected on the target surface. Hotspot residues flagged; the rest of the interface is held fixed.',
+        'Backbone generation — candidate mainchain scaffolds are sampled around the site (precomputed with RFdiffusion-class methods).',
+        'Sequence design — each backbone is threaded with an amino-acid sequence predicted to fold and bind (ProteinMPNN-class).',
+        'Predicted fold — each designed sequence is folded back and scored for agreement with its intended backbone.',
+        'Metrics — the candidate is evaluated on confidence and interface quality.',
+        'Compare — two surviving candidates are placed side by side. Pick one to carry forward.',
+        'Candidate resolved. Provenance and precomputed status recorded below.'];
+      designStageTag='STAGE '+(stg+1)+' / '+this.DESIGN_STAGES.length+' · '+this.DESIGN_STAGES[stg];
+      designStageBody=bodies[stg];
+      designProvenance='Precomputed trajectory · not live computation. Methods: RFdiffusion + ProteinMPNN + AlphaFold2 (illustrative). No experimental validation.';
+      if(stg===6){ showDesignMetrics=true; designMetrics=[{k:'pLDDT (design)',v:'88.4',color:'var(--ink)'},{k:'pTM',v:'0.81',color:'var(--ink)'},{k:'ipTM (interface)',v:'0.74',color:'var(--teal)'},{k:'interface ΔG',v:'−14.2 kcal/mol',color:'var(--ink)'},{k:'buried SASA',v:'1,180 Å²',color:'var(--ink)'}]; }
+      if(stg===7){ showCompare=true; candidates=[{name:'CANDIDATE A',metrics:'ipTM 0.74 · ΔG −14.2 · SASA 1180',border:S.design.candidate===0?'var(--teal)':'var(--glass-brd)',bg:S.design.candidate===0?'var(--line)':'transparent',head:'var(--teal)',pick:()=>this.pickCandidate(0)},{name:'CANDIDATE B',metrics:'ipTM 0.69 · ΔG −12.8 · SASA 1020',border:S.design.candidate===1?'var(--teal)':'var(--glass-brd)',bg:S.design.candidate===1?'var(--line)':'transparent',head:'var(--ink-soft)',pick:()=>this.pickCandidate(1)}]; }
+      if(stg===8){ showDesignMetrics=true; designMetrics=[{k:'SELECTED',v:S.design.candidate===1?'Candidate B':'Candidate A',color:'var(--teal)'},{k:'ipTM',v:S.design.candidate===1?'0.69':'0.74',color:'var(--ink)'},{k:'status',v:'precomputed',color:'var(--ink-soft)'}]; designNextLabel='FINISH'; }
+    }
+
+    const relLegend=[{label:'COMPLEX · EXPERIMENTAL',color:this.REL_COLORS.Complex},{label:'INTERACTION · EXPERIMENTAL',color:this.REL_COLORS.Interaction},{label:'HOMOLOGY · COMPUTED',color:this.REL_COLORS.Homology},{label:'PROCESS · ANNOTATED',color:this.REL_COLORS.Process}];
+
+    const seqTag = sel? (sel.residues>4000?'VIRTUALIZED':(sel.seqReal?'UNIPROT '+sel.id:'REPRESENTATIVE')) : '';
+    const seqSelReadout = S.seqSel? ('Residues '+(S.seqSel.a+1)+(S.seqSel.b>S.seqSel.a?('–'+(S.seqSel.b+1)):'')+' → highlighted in structure') : 'Drag across residues to select · click the 3D structure to reverse-select';
+
+    const busy = S.view==='inspect'||S.view==='design'||S.seqOpen;
+    return {
+      canvasRef:this.canvasRef, labelsRef:this.labelsRef, seqRef:this.seqRef, searchRef:this.searchRef, commandRef:this.commandRef,
+      rootStyle,
+      markSrc: light?'assets/helicase-mark-black.png':'assets/helicase-mark-white.png',
+      wordSrc: light?'assets/word-black.png':'assets/word-white.png',
+      themeLabel: light?'DARK':'LIGHT', soundLabel:S.sound?'SOUND ●':'SOUND ○',
+      statusDot:'var(--teal)', statusText:'UNIPROT 2026_02',
+      isLoading:S.phase==='loading', stageLabel:this.STAGES[S.stage], progressPct:Math.round(S.progress*100)+'%',
+      loadDetail:'Resolved '+S.familiesMapped.toLocaleString()+' of 575,503 reviewed',
+      levels, railOpacity: S.phase==='loading'?0:1, railHint: S.view==='universe'?'Click a territory to enter':'Click a level to return',
+      showQuery: S.phase!=='loading'&&(S.view==='universe'||S.view==='territory')&&!S.commandOpen,
+      showSuggest: !S.queryActive,
+      query:S.query, onQueryInput:e=>this.onQueryInput(e), onQueryKey:e=>this.onQueryKey(e), onQuerySubmit:()=>this.onQuerySubmit(), onClearQuery:()=>this.onClearQuery(),
+      queryActive:S.queryActive, queryFilter:S.queryFilter, queryCount:S.queryCount, suggestions,
+      hasSelection:!!sel && (S.view==='glance'), sel:selView,
+      tierGlance:S.tier==='glance', tierLearn:S.tier==='learn',
+      glanceColor:S.tier==='glance'?'var(--ink)':'var(--ink-faint)', glanceBorder:S.tier==='glance'?'var(--teal)':'transparent',
+      learnColor:S.tier==='learn'?'var(--ink)':'var(--ink-faint)', learnBorder:S.tier==='learn'?'var(--teal)':'transparent',
+      showInspectBtn:S.view==='glance', canDesign: sel && !sel.predicted,
+      onGlance:()=>this.onGlance(), onLearn:()=>this.onLearn(),
+      onInspect:()=>this.onInspect(), onReturn:()=>this.onReturn(), onHome:()=>this.onHome(),
+      onStartDesign:()=>this.onStartDesign(), onOpenSeq:()=>this.onOpenSeq(), onCloseSeq:()=>this.onCloseSeq(),
+      threadsLabel:S.threadsOn?'HIDE':'REVEAL', threadsColor:S.threadsOn?T.onAccent:'var(--ink)', threadsBorder:S.threadsOn?'var(--teal)':'var(--glass-brd)',
+      showThreadsList:true, onToggleThreads:()=>this.onToggleThreads(),
+      showRelLegend: S.threadsOn && S.view==='glance',  relLegend,
+      isInspect:S.view==='inspect', isDesign:S.view==='design',
+      reps, onToggleLigands:()=>this.toggleLigands(), onColorMode:()=>this.onColorMode(), colorModeLabel:S.colorMode==='chain'?'CHAIN':'DOMAIN',
+      ligState:S.ligands?'●':'○', ligBorder:S.ligands?'var(--teal)':'var(--glass-brd)', ligColor:S.ligands?T.onAccent:'var(--ink)', ligBg:S.ligands?'var(--teal)':'transparent',
+      confLabel: predicted?('Confidence X-ray · mean pLDDT '+sel.plddt):'Confidence undefined · experimental structure', 
+      confBorder: predicted?'var(--glass-brd)':'var(--line)', confIcon:predicted?'#c9922f':'var(--ink-faint)',
+      onToggleConfidence:()=>this.toggleConfidence(), confBtnLabel:S.confidence?'HIDE X-RAY':'SHOW CONFIDENCE X-RAY',
+      confBtnColor:S.confidence?T.onAccent:'var(--ink)', confBtnBorder:S.confidence?'var(--teal)':'var(--glass-brd)', showConfLegend:predicted&&S.confidence,
+      structRows, molNote:'Stylized backbone — the Mol* renderer mounts here in production. Not measured coordinates.', seqBtnLabel:S.seqOpen?'HIDE SEQUENCE':'SEQUENCE ↕',
+      designStages, designStageTag, designStageBody, designMetrics, showDesignMetrics, showCompare, candidates, designNextLabel, designProvenance,
+      onDesignNext:()=>this.onDesignNext(), onDesignBack:()=>this.onDesignBack(), onExitDesign:()=>this.onExitDesign(),
+      seqOpen:S.seqOpen, seqMeta: sel?(sel.residues.toLocaleString()+' aa · '+sel.chains.replace(/,/g,'')+' chain'):'', seqTag, seqTagColor: seqTag==='REPRESENTATIVE'?'#c9922f':'var(--teal)', seqSelReadout,
+      atlasActive:!!S.atlas, atlasAnswer:S.atlas?S.atlas.answer:'', atlasTrace:S.atlas?S.atlas.trace:[], onDismissAtlas:()=>this.onDismissAtlas(),
+      command:S.command, onCommandInput:e=>this.onCommandInput(e), onCommandKey:e=>this.onCommandKey(e), commandOpen:S.commandOpen, onOpenCommand:()=>this.onOpenCommand(), onCloseCommand:()=>this.onCloseCommand(), onStop:e=>e.stopPropagation&&e.stopPropagation(), atlasSuggest,
+      showAskButton: S.phase!=='loading'&&!S.commandOpen,
+      navHint: S.view==='universe'?'DRAG ORBIT · RIGHT/SHIFT-DRAG PAN · SCROLL ZOOM · DOUBLE-CLICK FOCUS':'ESC RETURNS ONE LEVEL', hintOpacity:S.hintSeen?0:1,
+      showTelemetryBar:(this.props.showTelemetry!==false)&&S.phase!=='loading', telemetryOpacity:busy?0:1,
+      statusLine: S.view==='universe'?'Atlas ready · 75,000 proteins in delivery profile':(S.view==='territory'?this.FAMS[S.territory].name+' · '+this.FAMS[S.territory].count.toLocaleString()+' proteins':(sel?sel.name:'Atlas ready')),
+      fps:S.fps, visible: S.queryActive?this.FAMS[this._queryFam].count.toLocaleString():'75,000',
+      onToggleTheme:()=>this.onToggleTheme(), onToggleSound:()=>this.onToggleSound()
+    };
+  }
+}
+</script>
+</body>
+</html>
