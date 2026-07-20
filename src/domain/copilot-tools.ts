@@ -9,7 +9,12 @@ export const copilotToolArgumentSchemas = {
   color_by: z.object({ scheme: z.enum(["confidence", "trusted_core", "hydrophobicity"]) }).strict(),
   focus_confidence_range: z.object({ band: z.enum(["very_high", "confident", "low", "very_low"]) }).strict(),
   start_design_journey: z.object({ trajectory_id: z.literal("proteinmpnn-6ehb-example-6") }).strict(),
+  design_binder: z.object({ target_site: z.literal("6ehb-homotrimer"), spec: z.string().trim().min(1).max(500) }).strict(),
+  play_design_trajectory: z.object({}).strict(),
+  pause_design_trajectory: z.object({}).strict(),
   set_design_stage: z.object({ stage_index: z.number().int().min(0).max(2) }).strict(),
+  compare_design_candidates: z.object({ candidate_ids: z.array(z.enum(["6ehb-sample-1", "6ehb-sample-2"])).min(1).max(2) }).strict(),
+  return_to_design_target: z.object({}).strict(),
   select_design_candidate: z.object({ candidate_id: z.enum(["6ehb-sample-1", "6ehb-sample-2"]) }).strict(),
   return_to_universe: z.object({}).strict(),
 } as const;
@@ -26,8 +31,13 @@ export const copilotTools = [
   { type: "function", name: "color_by", description: "Apply an evidence-aware structure coloring scheme.", strict: true, parameters: objectSchema({ scheme: { type: "string", enum: ["confidence", "trusted_core", "hydrophobicity"] } }, ["scheme"]) },
   { type: "function", name: "focus_confidence_range", description: "Focus a verified AlphaFold pLDDT band on the active predicted structure.", strict: true, parameters: objectSchema({ band: { type: "string", enum: ["very_high", "confident", "low", "very_low"] } }, ["band"]) },
   { type: "function", name: "start_design_journey", description: "Start the attributable precomputed ProteinMPNN 6EHB sequence-redesign journey; this is not binder generation.", strict: true, parameters: objectSchema({ trajectory_id: { type: "string", enum: ["proteinmpnn-6ehb-example-6"] } }, ["trajectory_id"]) },
+  { type: "function", name: "design_binder", description: "Map an eligible binder request to the available precomputed 6EHB redesign evidence. This does not generate a sequence or claim binding.", strict: true, parameters: objectSchema({ target_site: { type: "string", enum: ["6ehb-homotrimer"] }, spec: { type: "string", minLength: 1, maxLength: 500 } }, ["target_site", "spec"]) },
+  { type: "function", name: "play_design_trajectory", description: "Play the imported precomputed evidence stages.", strict: true, parameters: objectSchema({}, []) },
+  { type: "function", name: "pause_design_trajectory", description: "Pause the imported evidence stages.", strict: true, parameters: objectSchema({}, []) },
   { type: "function", name: "set_design_stage", description: "Move to a stage in the active design journey.", strict: true, parameters: objectSchema({ stage_index: { type: "number", minimum: 0, maximum: 2 } }, ["stage_index"]) },
+  { type: "function", name: "compare_design_candidates", description: "Compare up to two attributable ProteinMPNN candidates.", strict: true, parameters: objectSchema({ candidate_ids: { type: "array", items: { type: "string", enum: ["6ehb-sample-1", "6ehb-sample-2"] }, minItems: 1, maxItems: 2 } }, ["candidate_ids"]) },
   { type: "function", name: "select_design_candidate", description: "Select one attributable ProteinMPNN candidate in the active journey.", strict: true, parameters: objectSchema({ candidate_id: { type: "string", enum: ["6ehb-sample-1", "6ehb-sample-2"] } }, ["candidate_id"]) },
+  { type: "function", name: "return_to_design_target", description: "Return from comparison to the active design target.", strict: true, parameters: objectSchema({}, []) },
   { type: "function", name: "return_to_universe", description: "Return to the preserved universe camera context.", strict: true, parameters: objectSchema({}, []) },
 ] as const;
 
