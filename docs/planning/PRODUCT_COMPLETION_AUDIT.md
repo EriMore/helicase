@@ -12,9 +12,9 @@ The protein-universe implementation is present on `agent/protein-universe`, but 
 
 | Status | Count |
 | --- | ---: |
-| Complete | 22 |
-| Partial | 16 |
-| Missing | 10 |
+| Complete | 26 |
+| Partial | 15 |
+| Missing | 7 |
 | Blocked | 0 |
 | **Total** | **48** |
 
@@ -61,13 +61,13 @@ The protein-universe implementation is present on `agent/protein-universe`, but 
 | 35 | Representation/chain/ligand controls | Partial | Cartoon and ligand defaults exist | Engine-level options, chain visibility and safe defaults | Controls operate without exposing Mol* details |
 | 36 | PDB residue coverage mapping | Missing | UI warns coverage unresolved | Map UniProt/PDB chains/ranges with caveats | Experimental coverage is explicit and residue actions are guarded |
 | 37 | Structure errors/retry/cancellation | Partial | Unavailable state and teardown exist | Abort requests, retry command, structured failure causes | Repeated entry/exit is leak-free and failures recover |
-| 38 | Provenance design-trajectory schema | Missing | Only `developmentDesign` disclaimer fixture | Versioned stage/candidate/metric/provenance contracts | Every design artifact has source, method, identity and limitations |
-| 39 | Scientifically honest design journey | Missing | Percentage choreography only | Import verified public/generated workflow or record blocker evidence | Eligible target can traverse real precomputed stages/candidates |
-| 40 | Design navigation/comparison | Missing | No stage/candidate controls | Back/forward/select/compare/return commands | Journey is inspectable and reversible through SceneController |
-| 41 | Responses API integration | Partial | Credentialed POST exists | Official streaming path, abort, schemas and model config | Credentialed run streams concise provenance-aware output |
-| 42 | Bounded validated GPT tools | Partial | Six strict JSON schemas but unvalidated execution | Runtime discriminated schemas and result/error protocol | Invalid calls cannot mutate scene; tools return structured outcomes |
-| 43 | Complete GPT scene context | Partial | Basic scene and selected protein only | Query, camera, structure, confidence and design context | Copilot reasons from the same engine snapshot as UI |
-| 44 | Copilot interruption/offline behavior | Partial | Labelled local fallback exists | Abort, retry, status events and no false credential claims | User can cancel/recover; offline mode stays explicit |
+| 38 | Provenance design-trajectory schema | Complete | `designTrajectorySchema` validates stage, candidate, metric and provenance payloads; shipped fixture passes runtime tests | Preserve versioned evidence boundary | Every design artifact has source, method, identity and limitations |
+| 39 | Scientifically honest design journey | Complete | Official ProteinMPNN example 6 for reviewed UniProt A5F934 / PDB 6EHB; exact model hash, seed, temperature, candidates and limitations imported | A future validated trajectory may append prediction/interface stages | Eligible target traverses real precomputed stages and stops honestly at unavailable validation |
+| 40 | Design navigation/comparison | Complete | `START_DESIGN_JOURNEY`, `SET_DESIGN_STAGE`, `SELECT_DESIGN_CANDIDATE`, reversible UI controls and source return | Final shell may replace presentation | Journey is inspectable and reversible through SceneController commands |
+| 41 | Responses API integration | Partial | GPT-5.6 Responses API now streams NDJSON text/tool events, supports abort, model env config and recoverable fallback | Credentialed run still requires a valid external key for final QA | Credentialed run streams concise provenance-aware output |
+| 42 | Bounded validated GPT tools | Complete | Strict OpenAI schemas plus Zod runtime validation; tests reject extra/out-of-range arguments before dispatch | Keep tool set bounded as engine grows | Invalid calls cannot mutate scene; accepted calls cross the typed command boundary |
+| 43 | Complete GPT scene context | Partial | Query, selected protein, confidence and design state now accompany each request | Add stable camera, residue and full engine snapshot context | Copilot reasons from the same engine snapshot as UI |
+| 44 | Copilot interruption/offline behavior | Partial | New turns abort stale streams; local-explicit mode uses the same NDJSON protocol and validated calls | Expose explicit cancel/retry controls and lifecycle events | User can cancel/recover; offline mode stays explicit |
 | 45 | Error/loading/recovery state machine | Partial | Ad hoc local strings and loader | Engine-level typed async states and retry actions | Every critical async subsystem exposes progress/error/recovery |
 | 46 | Automated tests | Partial | Vitest covers camera semantics/history/limits and scientific schemas | Add API, SceneController, design and E2E coverage | Critical reducers, schemas, camera, APIs and journey are covered |
 | 47 | Accessibility and input robustness | Partial | Labels and CSS reduced motion exist | Focus order, live status, keyboard, contrast, sound defaults | Keyboard and reduced-motion journey passes manual QA |

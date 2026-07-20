@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { atlasProteinSchema, confidenceDatasetSchema, designTrajectorySchema } from "./schemas";
+import { parseCopilotToolCall } from "./copilot-tools";
 
 describe("scientific runtime schemas", () => {
   it("rejects confidence outside the pLDDT scale", () => {
@@ -14,5 +17,19 @@ describe("scientific runtime schemas", () => {
 
   it("requires design journeys to identify precomputed evidence", () => {
     expect(designTrajectorySchema.safeParse({ schema: "helicase.design.trajectory.v1", precomputed: false }).success).toBe(false);
+  });
+
+  it("validates the shipped ProteinMPNN 6EHB trajectory", () => {
+    const fixture = JSON.parse(readFileSync(resolve(process.cwd(), "public/data/design/proteinmpnn-6ehb.json"), "utf8"));
+    const trajectory = designTrajectorySchema.parse(fixture);
+    expect(trajectory.targetStructureId).toBe("6EHB");
+    expect(trajectory.stages[1].candidates).toHaveLength(2);
+    expect(trajectory.stages[2].provenance.outputIdentity).toBe("Validation unavailable");
+  });
+
+  it("rejects unbounded copilot tool arguments", () => {
+    expect(parseCopilotToolCall("set_design_stage", { stage_index: 99 })).toBeNull();
+    expect(parseCopilotToolCall("query_atlas", { query: "kinase", injected: true })).toBeNull();
+    expect(parseCopilotToolCall("return_to_universe", {})).toEqual({ name: "return_to_universe", arguments: {} });
   });
 });

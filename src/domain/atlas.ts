@@ -23,8 +23,10 @@ export type SceneCommand =
   | { type: "CLEAR_QUERY" }
   | { type: "FOCUS_REGION"; regionId: string }
   | { type: "COLOR_BY"; scheme: "confidence" | "trusted_core" | "hydrophobicity" }
-  | { type: "DESIGN_BINDER"; targetSite: string; specification: string }
-  | { type: "DESIGN_COMPLETE" };
+  | { type: "START_DESIGN_JOURNEY"; trajectoryId: string; specification: string }
+  | { type: "SET_DESIGN_STAGE"; stageIndex: number }
+  | { type: "SELECT_DESIGN_CANDIDATE"; candidateId: string }
+  | { type: "LEAVE_DESIGN_JOURNEY" };
 
 export type SceneState = {
   mode: SceneMode;
@@ -34,6 +36,9 @@ export type SceneState = {
   focusedRegionId: string | null;
   cameraContext: CameraContext | null;
   designSpecification: string | null;
+  designTrajectoryId: string | null;
+  designStageIndex: number;
+  selectedDesignCandidateId: string | null;
   lastCommand: SceneCommand["type"] | null;
 };
 
@@ -45,6 +50,9 @@ export const initialSceneState: SceneState = {
   focusedRegionId: null,
   cameraContext: null,
   designSpecification: null,
+  designTrajectoryId: null,
+  designStageIndex: 0,
+  selectedDesignCandidateId: null,
   lastCommand: null,
 };
 
@@ -58,7 +66,9 @@ export function reduceScene(state: SceneState, command: SceneCommand): SceneStat
     case "CLEAR_QUERY": return { ...state, query: "", queryResultIds: [], lastCommand: command.type };
     case "FOCUS_REGION": return { ...state, focusedRegionId: command.regionId, mode: "universe", lastCommand: command.type };
     case "COLOR_BY": return { ...state, mode: command.scheme === "trusted_core" ? "xray" : "structure", lastCommand: command.type };
-    case "DESIGN_BINDER": return { ...state, mode: "designing", designSpecification: command.specification, lastCommand: command.type };
-    case "DESIGN_COMPLETE": return { ...state, mode: "designComplete", lastCommand: command.type };
+    case "START_DESIGN_JOURNEY": return { ...state, mode: "designing", designTrajectoryId: command.trajectoryId, designSpecification: command.specification, designStageIndex: 0, selectedDesignCandidateId: null, lastCommand: command.type };
+    case "SET_DESIGN_STAGE": return { ...state, mode: "designing", designStageIndex: Math.max(0, command.stageIndex), lastCommand: command.type };
+    case "SELECT_DESIGN_CANDIDATE": return { ...state, selectedDesignCandidateId: command.candidateId, lastCommand: command.type };
+    case "LEAVE_DESIGN_JOURNEY": return { ...state, mode: "structure", designTrajectoryId: null, designSpecification: null, designStageIndex: 0, selectedDesignCandidateId: null, lastCommand: command.type };
   }
 }

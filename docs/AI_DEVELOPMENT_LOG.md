@@ -1,5 +1,39 @@
 ---
 
+## 2026-07-20T04:05:00+01:00 - Verified design journey and streamed copilot checkpoint
+
+**Phase:** Functional completion
+
+**Objective**
+Replace decorative design choreography with attributable scientific artifacts and make GPT scene control streamed, cancellable and runtime validated.
+
+**Completed**
+- Imported the official ProteinMPNN example 6 sequence redesign for reviewed UniProt A5F934 / experimental PDB 6EHB, including exact candidate sequences, scores, sequence recovery, model version, repository commit, seed, temperature, source URLs and limitations.
+- Made the evidence boundary explicit: the journey ends before structure prediction, affinity, interface or wet-lab validation because the official example supplies none of those artifacts.
+- Added reversible stage navigation, candidate selection and return-to-source commands through the SceneController reducer.
+- Replaced unvalidated copilot casts with strict Zod argument schemas and a bounded nine-tool surface.
+- Added GPT-5.6 Responses API streaming through a local NDJSON protocol, stale-request abortion, complete query/protein/confidence/design context and an explicit offline stream using the same tool protocol.
+- Revalidated Mol* Confidence X-Ray after synchronous plugin disposal; no browser warnings or errors remained.
+
+**Validation**
+- `npm run typecheck` - passed.
+- `npm test` - 8 tests passed, including the shipped design artifact and rejected copilot arguments.
+- `npm run lint` - passed.
+- `npm run build` - passed.
+- Manual QA at 1440 x 900: A5F934 resolved from the complete reviewed corpus, PDB 6EHB rendered, both ProteinMPNN candidates and the validation boundary were traversable, offline copilot streamed and launched the journey, predicted A0A0R4IVV0 Confidence X-Ray rendered mean pLDDT 89.0 with three very-low-confidence ranges, and the console contained zero warnings/errors.
+
+**Scientific boundary**
+- 3HTN was rejected as the showcase target because its linked accession was not returned by the reviewed-UniProt corpus. 6EHB maps to reviewed accession A5F934 and has an official ProteinMPNN homooligomer output, so it remains discoverable through the production Atlas query path.
+
+**Git**
+- Branch: `agent/functional-completion`, stacked on `agent/protein-universe` pending PR #5.
+- Commit: pending checkpoint commit.
+
+**Next**
+Complete residue/chain structure controls, structural-neighbour navigation, persistence/recovery, credentialed GPT QA and end-to-end automation.
+
+---
+
 ## 2026-07-20T03:10:00+01:00 - Functional completion: engine, corpus and confidence checkpoint
 
 **Phase:** Functional completion

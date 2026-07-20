@@ -110,7 +110,7 @@ export const designMetricSchema = z.object({
 });
 
 export const designCandidateSchema = z.object({
-  id: z.string(), name: z.string(), sequence: z.string().regex(/^[A-Z]+$/).nullable(), structureUrl: z.string().nullable(),
+  id: z.string(), name: z.string(), sequence: z.string().regex(/^[A-Z]+(?:\/[A-Z]+)*$/).nullable(), structureUrl: z.string().url().nullable(),
   metrics: z.array(designMetricSchema), provenance: provenanceSchema,
 });
 

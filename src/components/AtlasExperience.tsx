@@ -2,18 +2,19 @@
 
 import Image from "next/image";
 import dynamic from "next/dynamic";
-import { type FormEvent, useEffect, useMemo, useReducer, useState } from "react";
-import { developmentDesign } from "@/domain/fixtures";
+import { type FormEvent, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { initialSceneState, reduceScene, type SceneCommand } from "@/domain/atlas";
 import type { AtlasCluster, AtlasProtein, AtlasSearchResult, CameraContext } from "@/domain/atlas-data";
 import type { CopilotToolCall } from "@/domain/copilot-tools";
 import { useProteinAtlas } from "@/hooks/useProteinAtlas";
 import { useStructureConfidence } from "@/hooks/useStructureConfidence";
+import { useDesignTrajectory } from "@/hooks/useDesignTrajectory";
 import { WorldCanvas } from "./WorldCanvas";
 
 const StructureView = dynamic(() => import("./StructureView").then((module) => module.StructureView), { ssr: false });
 
 type Message = { role: "atlas" | "you"; text: string };
+type CopilotStreamEvent = { type: "meta"; source: string } | { type: "text_delta"; delta: string } | { type: "tool_call"; call: CopilotToolCall } | { type: "error"; message: string; retryable: boolean } | { type: "done" };
 type WorldMetrics = { fps: number; visibleEntities: number; cameraDistance: number; heapMb: number | null };
 
 const initialMetrics: WorldMetrics = { fps: 0, visibleEntities: 0, cameraDistance: 0, heapMb: null };
@@ -21,7 +22,6 @@ const initialMetrics: WorldMetrics = { fps: 0, visibleEntities: 0, cameraDistanc
 export function AtlasExperience() {
   const [state, dispatch] = useReducer(reduceScene, initialSceneState);
   const [minimumLoadComplete, setMinimumLoadComplete] = useState(false);
-  const [designProgress, setDesignProgress] = useState(0);
   const [prompt, setPrompt] = useState("");
   const [query, setQuery] = useState("");
   const [queryResults, setQueryResults] = useState<AtlasSearchResult[]>([]);
@@ -30,16 +30,15 @@ export function AtlasExperience() {
   const [focusedCluster, setFocusedCluster] = useState<AtlasCluster | null>(null);
   const [metrics, setMetrics] = useState<WorldMetrics>(initialMetrics);
   const [messages, setMessages] = useState<Message[]>([{ role: "atlas", text: "Ask for a protein, organism, family, or function. I will move the universe, not just return text." }]);
+  const copilotRequest = useRef<AbortController | null>(null);
   const entered = state.mode !== "landing";
   const atlas = useProteinAtlas(entered);
   const selectedProtein = state.selectedProteinId ? atlas.recordById.get(state.selectedProteinId) ?? null : null;
   const confidence = useStructureConfidence(selectedProtein?.structure ?? null);
+  const design = useDesignTrajectory(selectedProtein?.id === "A5F934");
 
   const issue = (command: SceneCommand) => dispatch(command);
-  const launchDesign = (targetSite: string, specification: string) => {
-    setDesignProgress(0);
-    issue({ type: "DESIGN_BINDER", targetSite, specification });
-  };
+  const launchDesign = () => issue({ type: "START_DESIGN_JOURNEY", trajectoryId: "proteinmpnn-6ehb-example-6", specification: "Official precomputed 6EHB sequence redesign" });
 
   useEffect(() => {
     const timer = window.setTimeout(() => setMinimumLoadComplete(true), 2100);
@@ -50,19 +49,6 @@ export function AtlasExperience() {
     if (state.mode !== "diving") return;
     const timer = window.setTimeout(() => issue({ type: "COLOR_BY", scheme: "confidence" }), 1180);
     return () => window.clearTimeout(timer);
-  }, [state.mode]);
-
-  useEffect(() => {
-    if (state.mode !== "designing") return;
-    const timer = window.setInterval(() => setDesignProgress((current) => {
-      if (current >= 100) {
-        window.clearInterval(timer);
-        issue({ type: "DESIGN_COMPLETE" });
-        return 100;
-      }
-      return current + 2;
-    }), 90);
-    return () => window.clearInterval(timer);
   }, [state.mode]);
 
   const runQuery = async (value: string) => {
@@ -103,7 +89,10 @@ export function AtlasExperience() {
     if (tool.name === "query_atlas") await runQuery(tool.arguments.query ?? "");
     if (tool.name === "focus_region") issue({ type: "FOCUS_REGION", regionId: tool.arguments.region_id ?? "unresolved" });
     if (tool.name === "color_by") issue({ type: "COLOR_BY", scheme: (tool.arguments.scheme as "confidence" | "trusted_core" | "hydrophobicity") ?? "confidence" });
-    if (tool.name === "design_binder" && selectedProtein) launchDesign(tool.arguments.target_site ?? `${selectedProtein.id}-surface`, tool.arguments.specification ?? "A compact binder");
+    if (tool.name === "start_design_journey" && selectedProtein?.id === "A5F934") launchDesign();
+    if (tool.name === "set_design_stage") issue({ type: "SET_DESIGN_STAGE", stageIndex: tool.arguments.stage_index });
+    if (tool.name === "select_design_candidate") issue({ type: "SELECT_DESIGN_CANDIDATE", candidateId: tool.arguments.candidate_id });
+    if (tool.name === "focus_confidence_range" && confidence.status === "available") issue({ type: "COLOR_BY", scheme: "trusted_core" });
     if (tool.name === "fly_to_protein") {
       const protein = atlas.recordById.get(tool.arguments.protein_id ?? "");
       if (protein) selectProtein(protein);
@@ -117,21 +106,41 @@ export function AtlasExperience() {
     if (!question) return;
     setPrompt("");
     setMessages((current) => [...current, { role: "you", text: question }]);
+    copilotRequest.current?.abort();
+    const controller = new AbortController();
+    copilotRequest.current = controller;
     try {
       const response = await fetch("/api/copilot", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           message: question,
           scene: { mode: state.mode, query: state.query, indexedProteins: atlas.indexedCount },
           protein: selectedProtein,
+          confidence: confidence.status === "available" ? { status: "available", metric: confidence.data.metric, mean: confidence.data.mean, lowConfidenceRanges: confidence.data.ranges.veryLow } : { status: confidence.status },
+          design: { status: design.status, trajectoryId: state.designTrajectoryId, stageIndex: state.designStageIndex },
         }),
       });
-      const data = await response.json() as { text: string; toolCalls?: CopilotToolCall[] };
-      setMessages((current) => [...current, { role: "atlas", text: data.text }]);
-      for (const tool of data.toolCalls ?? []) await applyTool(tool);
-    } catch {
-      setMessages((current) => [...current, { role: "atlas", text: "The reasoning channel is unavailable. Direct spatial search remains active." }]);
+      if (!response.ok || !response.body) throw new Error(`Copilot unavailable (${response.status})`);
+      const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = ""; let messageIndex = -1;
+      setMessages((current) => { messageIndex = current.length; return [...current, { role: "atlas", text: "" }]; });
+      while (true) {
+        const { done, value } = await reader.read(); if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n"); buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const streamed = JSON.parse(line) as CopilotStreamEvent;
+          if (streamed.type === "text_delta") setMessages((current) => current.map((message, index) => index === messageIndex ? { ...message, text: message.text + streamed.delta } : message));
+          if (streamed.type === "tool_call") await applyTool(streamed.call);
+          if (streamed.type === "error") setMessages((current) => current.map((message, index) => index === messageIndex ? { ...message, text: message.text || streamed.message } : message));
+        }
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) setMessages((current) => [...current, { role: "atlas", text: error instanceof Error ? error.message : "The reasoning channel is unavailable. Direct spatial search remains active." }]);
+    } finally {
+      if (copilotRequest.current === controller) copilotRequest.current = null;
     }
   };
 
@@ -223,6 +232,7 @@ export function AtlasExperience() {
       </section>
       <button className="return" onClick={() => issue({ type: "RETURN_TO_UNIVERSE" })}>← Return to spatial context</button>
       {state.mode === "structure" && <button className="xray-trigger" disabled={confidence.status !== "available"} onClick={() => issue({ type: "COLOR_BY", scheme: "trusted_core" })}><span>✦</span>{confidence.status === "available" ? `Confidence X-ray · mean pLDDT ${confidence.data.mean.toFixed(1)}` : confidence.status === "loading" ? "Resolving AlphaFold per-residue confidence…" : selectedProtein.structure.kind === "experimental" ? "Prediction confidence is undefined for experimental structures" : confidence.error ?? "Verified confidence unavailable"}</button>}
+      {state.mode === "structure" && selectedProtein.id === "A5F934" && <button className="design-launch" disabled={design.status !== "available"} onClick={launchDesign}>Official 6EHB sequence redesign <span>→</span></button>}
       {state.mode === "xray" && confidence.status === "available" && <aside className="xray-note">
         <span>VERIFIED ALPHAFOLD CONFIDENCE</span>
         <p>Mean pLDDT {confidence.data.mean.toFixed(1)} · {confidence.data.ranges.veryLow.length} very-low-confidence ranges · model {confidence.data.modelVersion}</p>
@@ -231,13 +241,22 @@ export function AtlasExperience() {
       </aside>}
     </>}
 
-    {designMode && selectedProtein && <section className="design-hud">
-      <p className="eyebrow">GENERATIVE HYPOTHESIS / {String(Math.round(designProgress)).padStart(2, "0")}%</p>
-      <div className="pipeline">{developmentDesign.pipeline.map((stage, index) => <span key={stage} className={designProgress >= index * 40 ? "resolved" : ""}>{stage}</span>)}</div>
-      <div className="progress"><i style={{ width: `${designProgress}%` }} /></div>
-      {state.mode === "designComplete" ? <><h2>Candidate choreography resolved.</h2><p>A verified scientific trajectory has not yet been imported for this address.</p></> : <p>Order is emerging around the selected protein address.</p>}
-      <small>{developmentDesign.disclaimer}</small>
-    </section>}
+    {designMode && selectedProtein && design.status === "available" && (() => {
+      const stageIndex = Math.min(state.designStageIndex, design.data.stages.length - 1);
+      const stage = design.data.stages[stageIndex];
+      const selectedCandidate = stage.candidates.find((candidate) => candidate.id === state.selectedDesignCandidateId) ?? stage.candidates[0] ?? null;
+      return <section className="design-hud">
+        <p className="eyebrow">PRECOMPUTED DESIGN EVIDENCE / {stageIndex + 1} OF {design.data.stages.length}</p>
+        <div className="pipeline">{design.data.stages.map((candidateStage, index) => <button key={candidateStage.id} className={index === stageIndex ? "resolved" : ""} onClick={() => issue({ type: "SET_DESIGN_STAGE", stageIndex: index })}>{candidateStage.label}</button>)}</div>
+        <div className="progress"><i style={{ width: `${((stageIndex + 1) / design.data.stages.length) * 100}%` }} /></div>
+        <h2>{stage.label}</h2>
+        <p>{stage.description}</p>
+        {stage.candidates.length > 0 && <div className="design-candidates">{stage.candidates.map((candidate) => <button key={candidate.id} className={candidate.id === selectedCandidate?.id ? "active" : ""} onClick={() => issue({ type: "SELECT_DESIGN_CANDIDATE", candidateId: candidate.id })}>{candidate.name}<small>score {candidate.metrics[0]?.value.toFixed(4)} · recovery {((candidate.metrics[2]?.value ?? 0) * 100).toFixed(1)}%</small></button>)}</div>}
+        {selectedCandidate && <p>ProteinMPNN score {selectedCandidate.metrics[0]?.value.toFixed(4)}. This estimates sequence compatibility with the backbone; it is not affinity or experimental efficacy.</p>}
+        <div className="design-controls"><button disabled={stageIndex === 0} onClick={() => issue({ type: "SET_DESIGN_STAGE", stageIndex: stageIndex - 1 })}>Previous</button><button disabled={stageIndex === design.data.stages.length - 1} onClick={() => issue({ type: "SET_DESIGN_STAGE", stageIndex: stageIndex + 1 })}>Next</button><button onClick={() => issue({ type: "LEAVE_DESIGN_JOURNEY" })}>Return to source</button></div>
+        <small>{stage.provenance.source} · {stage.provenance.methodVersion}<br />{stage.provenance.limitations[0]}</small>
+      </section>;
+    })()}
 
     <section className={`copilot ${state.mode === "landing" ? "copilot-dormant" : ""}`}>
       <div className="copilot-header"><span className="orb" /> ATLAS COPILOT <small>GPT-5.6 SCENE PATH</small></div>
