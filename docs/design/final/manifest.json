@@ -1,0 +1,53 @@
+{
+  "package": "Helicase Atlas — Design Handoff",
+  "direction": "The Illuminated Plate",
+  "prepared": "2026-07-21",
+  "source_of_truth": "prototype/Helicase Atlas.dc.html",
+  "documents": [
+    { "file": "README.md", "purpose": "Package index, how to run and inspect the prototype" },
+    { "file": "DESIGN_TARGET.md", "purpose": "Intent, definition of done, non-goals, precedence rule" },
+    { "file": "UI_INTEGRATION_HANDOFF.md", "purpose": "Interaction → SceneController map, the primary engineering contract" },
+    { "file": "COMPONENT_INVENTORY.md", "purpose": "Every authored UI component: purpose, states, props/data it needs" },
+    { "file": "DESIGN_TOKENS.md", "purpose": "Color (light+dark), typography, spacing/grid tokens" },
+    { "file": "MOTION_AND_CAMERA_SPEC.md", "purpose": "Every easing, duration, and camera constant" },
+    { "file": "SOUND_SPEC.md", "purpose": "Every sound cue, frequency, envelope, consent rule" },
+    { "file": "SCREEN_STATE_MATRIX.md", "purpose": "Full named-state list and state-transition table" },
+    { "file": "SCIENTIFIC_DATA_BOUNDARIES.md", "purpose": "Fixture vs. production data — critical boundaries" },
+    { "file": "VISUAL_ACCEPTANCE_CRITERIA.md", "purpose": "Checklist production must pass" },
+    { "file": "IMPLEMENTATION_NOTES.md", "purpose": "Practical substitution guidance for engineering" }
+  ],
+  "prototype_files": [
+    { "file": "prototype/Helicase Atlas.dc.html", "role": "complete interactive prototype, unmodified from design phase" },
+    { "file": "prototype/support.js", "role": "DC runtime helper, unmodified" }
+  ],
+  "assets": [
+    { "file": "prototype/assets/helicase-mark-black.png", "used_by": "header logo mark + loading screen, light theme", "referenced_as": "assets/helicase-mark-black.png" },
+    { "file": "prototype/assets/helicase-mark-white.png", "used_by": "header logo mark + loading screen, dark theme", "referenced_as": "assets/helicase-mark-white.png" },
+    { "file": "prototype/assets/word-black.png", "used_by": "header wordmark, light theme", "referenced_as": "assets/word-black.png" },
+    { "file": "prototype/assets/word-white.png", "used_by": "header wordmark, dark theme", "referenced_as": "assets/word-white.png" },
+    { "file": "prototype/assets/unused/helicase-wordmark-black.png", "used_by": "not referenced by the prototype; included for completeness/parity with source assets" },
+    { "file": "prototype/assets/unused/helicase-wordmark-white.png", "used_by": "not referenced by the prototype; included for completeness/parity with source assets" }
+  ],
+  "external_runtime_dependencies": [
+    { "name": "three.js r150.1", "source": "unpkg CDN", "purpose": "point field, camera, structure stand-in rendering" },
+    { "name": "Google Fonts: Spectral, IBM Plex Mono", "source": "fonts.googleapis.com", "purpose": "editorial serif + mono type system" }
+  ],
+  "screenshots": [
+    { "file": "screenshots/01-frame.png", "state": "Loading — static logo, scan line, progress copy" },
+    { "file": "screenshots/02-frame.png", "state": "Universe arrival — ambient orbit begins" },
+    { "file": "screenshots/03-frame.png", "state": "Territory entry — focused family expanded, others dimmed" },
+    { "file": "screenshots/04-frame.png", "state": "Protein selection — Glance tab, bracket marker, identity panel" },
+    { "file": "screenshots/05-frame.png", "state": "Learn tab — domains, homologues, pathway, provenance" },
+    { "file": "screenshots/06-frame.png", "state": "Relationship threads revealed" },
+    { "file": "screenshots/07-frame.png", "state": "Sequence panel expanded" },
+    { "file": "screenshots/08-frame.png", "state": "Structure inspection — experimental structure (hemoglobin-α), cartoon representation" },
+    { "file": "screenshots/09-frame.png", "state": "Representation change — surface" },
+    { "file": "screenshots/10-frame.png", "state": "Return to universe, mid-transition to a predicted-structure protein" },
+    { "file": "screenshots/11-frame.png", "state": "Structure inspection — predicted structure (dnt1)" },
+    { "file": "screenshots/12-frame.png", "state": "Confidence X-Ray active — pLDDT coloring + legend" },
+    { "file": "screenshots/13-frame.png", "state": "Protein-design journey — stage 1 (Target)" },
+    { "file": "screenshots/14-frame.png", "state": "Protein-design journey — stage 8 (Compare), two candidates" },
+    { "file": "screenshots/15-frame.png", "state": "Ask Atlas — semantic query with visible action trace" },
+    { "file": "screenshots/16-frame.png", "state": "Dark mode ('Specimen Chamber') — same design-journey state as 14, theme swapped" }
+  ]
+}
