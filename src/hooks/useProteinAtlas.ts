@@ -2,13 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AtlasManifest, AtlasProtein, AtlasSearchResult, AtlasShard } from "@/domain/atlas-data";
-import { atlasManifestSchema, atlasShardSchema, corpusSearchResponseSchema } from "@/domain/schemas";
-
-type SearchMessage = {
-  type: "RESULTS";
-  requestId: number;
-  results: Array<{ id: string; score: number; matchedBy: AtlasSearchResult["matchedBy"] }>;
-};
+import { atlasManifestSchema, atlasShardSchema, atlasWorkerMessageSchema, corpusSearchResponseSchema } from "@/domain/schemas";
 
 type SearchResolver = (results: AtlasSearchResult[]) => void;
 
@@ -32,15 +26,20 @@ export function useProteinAtlas(active: boolean) {
     const searches = pendingSearches.current;
     const worker = new Worker("/workers/atlas-search.js");
     workerRef.current = worker;
-    worker.onmessage = (event: MessageEvent<SearchMessage | { type: "INDEX_SIZE"; count: number }>) => {
-      if (event.data.type === "INDEX_SIZE") {
-        setIndexedCount(event.data.count);
+    worker.onmessage = (event: MessageEvent<unknown>) => {
+      const parsed = atlasWorkerMessageSchema.safeParse(event.data);
+      if (!parsed.success) {
+        setError("The Atlas search worker returned an invalid message and was isolated.");
         return;
       }
-      const resolver = pendingSearches.current.get(event.data.requestId);
+      if (parsed.data.type === "INDEX_SIZE") {
+        setIndexedCount(parsed.data.count);
+        return;
+      }
+      const resolver = pendingSearches.current.get(parsed.data.requestId);
       if (!resolver) return;
-      pendingSearches.current.delete(event.data.requestId);
-      resolver(event.data.results.flatMap((result) => {
+      pendingSearches.current.delete(parsed.data.requestId);
+      resolver(parsed.data.results.flatMap((result) => {
         const protein = recordsRef.current.get(result.id);
         return protein ? [{ protein, score: result.score, matchedBy: result.matchedBy }] : [];
       }));
@@ -150,8 +149,16 @@ export function useProteinAtlas(active: boolean) {
     }
   }, [materialize, searchLocal]);
 
+  const cancelSearch = useCallback(() => {
+    remoteSearch.current?.abort(); remoteSearch.current = null;
+    requestId.current += 1;
+    for (const resolver of pendingSearches.current.values()) resolver([]);
+    pendingSearches.current.clear();
+    setStatus("Query cancelled · loaded Atlas remains active");
+  }, []);
+
   const recordById = useMemo(() => new Map(records.map((record) => [record.id, record])), [records]);
   const progress = manifest ? Math.min(1, records.length / Math.max(1, manifest.coverage.records)) : 0;
 
-  return { manifest, records, recordById, indexedCount, addressableCount, loadedShardIds, ensureShard, search, materialize, status, error, progress };
+  return { manifest, records, recordById, indexedCount, addressableCount, loadedShardIds, ensureShard, search, cancelSearch, materialize, status, error, progress };
 }

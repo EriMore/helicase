@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { atlasProteinSchema, confidenceDatasetSchema, designTrajectorySchema } from "./schemas";
+import { atlasProteinSchema, atlasWorkerMessageSchema, confidenceDatasetSchema, copilotStreamEventSchema, designTrajectorySchema, sceneCommandSchema, structureMetadataSchema } from "./schemas";
 import { parseCopilotToolCall } from "./copilot-tools";
 
 describe("scientific runtime schemas", () => {
@@ -31,5 +31,25 @@ describe("scientific runtime schemas", () => {
     expect(parseCopilotToolCall("set_design_stage", { stage_index: 99 })).toBeNull();
     expect(parseCopilotToolCall("query_atlas", { query: "kinase", injected: true })).toBeNull();
     expect(parseCopilotToolCall("return_to_universe", {})).toEqual({ name: "return_to_universe", arguments: {} });
+  });
+
+  it("rejects malformed scene commands before reducer execution", () => {
+    expect(sceneCommandSchema.safeParse({ type: "FOCUS_RESIDUES", start: 1, end: 20, requestId: 1, injected: true }).success).toBe(false);
+    expect(sceneCommandSchema.safeParse({ type: "SET_REPRESENTATION", representation: "wireframe" }).success).toBe(false);
+  });
+
+  it("validates provenance-bearing RCSB/SIFTS coverage", () => {
+    const parsed = structureMetadataSchema.parse({ schema: "helicase.structure.metadata.v1", structure: { kind: "experimental", accession: "6EHB", source: "RCSB PDB" }, sourceUrl: "https://data.rcsb.org/rest/v1/core/entry/6EHB", retrievedAt: "2026-07-20T00:00:00Z", chains: [{ id: "A", entityId: "1", description: "Outer membrane protein U", uniprotAccession: "A5F934", entitySequenceCoverage: 1, referenceSequenceCoverage: 0.9384, alignments: [{ entityStart: 1, referenceStart: 22, length: 320, provenance: "SIFTS" }] }], limitations: [] });
+    expect(parsed.chains[0].alignments[0].referenceStart).toBe(22);
+  });
+
+  it("isolates malformed worker messages", () => {
+    expect(atlasWorkerMessageSchema.safeParse({ type: "RESULTS", requestId: 4, results: [{ id: "P1", score: Number.NaN, matchedBy: ["identifier"] }] }).success).toBe(false);
+    expect(atlasWorkerMessageSchema.safeParse({ type: "INDEX_SIZE", count: 75_000 }).success).toBe(true);
+  });
+
+  it("validates streamed copilot events before execution", () => {
+    expect(copilotStreamEventSchema.safeParse({ type: "tool_call", call: { name: "return_to_universe", arguments: {} } }).success).toBe(true);
+    expect(copilotStreamEventSchema.safeParse({ type: "tool_call", call: { name: "return_to_universe", arguments: {}, injected: true } }).success).toBe(false);
   });
 });

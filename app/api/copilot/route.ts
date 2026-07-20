@@ -4,7 +4,13 @@ import { z } from "zod";
 
 const requestSchema = z.object({
   message: z.string().trim().min(1).max(2_000),
-  scene: z.object({ mode: z.string().max(40), query: z.string().max(240), indexedProteins: z.number().int().nonnegative() }),
+  scene: z.object({
+    mode: z.string().max(40), query: z.string().max(240), indexedProteins: z.number().int().nonnegative(),
+    camera: z.object({ position: z.tuple([z.number(), z.number(), z.number()]), target: z.tuple([z.number(), z.number(), z.number()]), scale: z.enum(["universe", "region", "cluster", "protein"]) }).nullable(),
+    representation: z.enum(["cartoon", "surface", "ball-and-stick"]),
+    ligandsVisible: z.boolean(),
+    residueFocus: z.object({ start: z.number().int(), end: z.number().int(), chain: z.string().optional(), requestId: z.number().int().nonnegative() }).nullable(),
+  }).strict(),
   protein: atlasProteinSchema.nullable(),
   confidence: z.object({ status: z.string(), metric: z.string().optional(), mean: z.number().optional(), lowConfidenceRanges: z.array(z.tuple([z.number().int(), z.number().int()])).optional() }).optional(),
   design: z.object({ status: z.string(), trajectoryId: z.string().nullable(), stageIndex: z.number().int().nonnegative() }).optional(),

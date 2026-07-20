@@ -1,6 +1,6 @@
 # UI Integration Contract
 
-Status: canonical boundary for the functional-completion engine  
+Status: canonical v1 boundary for the completed functional engine
 Audience: product-engine, renderer, GPT, and future Claude design implementers
 
 ## Purpose
@@ -195,3 +195,52 @@ Public snapshots, commands and scientific payloads carry schema versions. Additi
 - The engine can be unit-tested without WebGL, Mol*, network or DOM.
 - Renderers can be tested with contract fakes.
 - No scientific claim exists only as display text; it originates in provenance-carrying state.
+
+## Implemented v1 integration surface
+
+The current React shell consumes the following stable engine and adapter contracts. A replacement shell may change layout and styling without changing these contracts.
+
+| Contract | Owner | Presentation input/output |
+| --- | --- | --- |
+| `SceneState`, `SceneCommand`, `sceneCommandSchema`, `reduceScene` | SceneController domain | Immutable serializable state; runtime-validated commands |
+| `CameraNavigation`, `CameraContext` | Navigation engine | Camera snapshots, focus/home/back/reset/cancel, direct-input deltas |
+| `AtlasManifest`, `AtlasProtein`, `AtlasSearchResult` | Atlas data adapter | Validated records, provenance, stable IDs and deterministic positions |
+| `useProteinAtlas` | Query/delivery adapter | Progressive load state, complete-corpus search, cancellation, materialization and recovery message |
+| `StructureView` | Mol* renderer adapter | Structure reference, representation, ligand visibility, residue focus, retry generation and lifecycle status |
+| `useStructureMetadata` | RCSB/SIFTS adapter | Chain identities, UniProt mapping, aligned ranges, coverage and limitations |
+| `useStructureConfidence` | AlphaFold adapter | Verified residue-keyed pLDDT, ranges, PAE reference and unavailable/failed states |
+| `useDesignTrajectory` | Design evidence adapter | Runtime-validated precomputed stages, candidates, metrics, provenance and evidence boundary |
+| `/api/copilot`, `CopilotToolCall` | GPT adapter | NDJSON lifecycle/text/tool events; all tool arguments validated before dispatch |
+
+The shell must not import Mol* state objects, Three.js objects, upstream response shapes, secret environment values, or raw OpenAI function-call arguments.
+
+## Command execution result
+
+Every presentation or GPT command is parsed by `sceneCommandSchema` before reducer execution. Rejected commands do not change scene state and surface a recoverable alert. Tool precondition failures—such as requesting Confidence X-Ray for an experimental structure or starting the verified journey without A5F934 selected—produce recoverable copilot text rather than partial mutation.
+
+## Renderer lifecycle
+
+`StructureView` reports `loading | ready | unavailable`, accepts a monotonic retry generation, and disposes Mol* before replacement. Representation, ligand visibility, and residue focus are SceneController state. `WorldCanvas` owns only draw resources and gesture translation; its reusable navigation policy remains in `CameraNavigation`.
+
+## Accessibility contract
+
+- Every control has an accessible name and keyboard focus indication.
+- The universe surface is focusable and references concise navigation instructions.
+- Keyboard navigation, home, reset, history and interruption remain available independently of pointer input.
+- Reduced-motion preference preserves deterministic endpoints while collapsing nonessential transition duration.
+- Status and command failures use semantic live/alert text; scientific meaning never depends on colour alone.
+
+## Recovery contract
+
+Queries and copilot streams are cancellable. Structure loads are retryable. Atlas startup failure offers a reload retry without mutating stored scientific artifacts. Route-level failures are isolated by subsystem; the application error boundary is reserved for uncaught shell failures. Offline copilot mode is explicit and uses the same event/tool protocol as credentialed mode.
+
+## Presentation replacement checklist
+
+Before replacing the shell, verify that it:
+
+1. Imports domain types and schemas, never renderer internals.
+2. Issues only `SceneCommand` objects and handles rejection.
+3. Preserves camera snapshots on structure entry/return.
+4. Preserves source, method, version and limitations beside scientific outputs.
+5. Treats async lifecycle and recovery as data, not invented animation progress.
+6. Re-runs reducer/schema tests and the complete production browser journey.

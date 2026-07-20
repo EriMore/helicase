@@ -253,6 +253,7 @@ export function WorldCanvas({
       return hit?.index != null ? clusterIndex.current[hit.index] ?? null : null;
     };
     const onPointerDown = (event: PointerEvent) => {
+      mount.focus({ preventScroll: true });
       pointerDown = true; moved = false; pointerButton = event.button; startX = lastX = event.clientX; startY = lastY = event.clientY;
       navigator.cancel();
       renderer.domElement.setPointerCapture(event.pointerId);
@@ -312,6 +313,7 @@ export function WorldCanvas({
       if (event.code === "Home") { event.preventDefault(); navigator.home(); }
       if (event.code === "KeyR") navigator.resetOrientation();
       if (event.code === "Backspace") { event.preventDefault(); navigator.back(); }
+      if (event.code === "Escape") { keys.clear(); navigator.cancel(); }
     };
     const onKeyUp = (event: KeyboardEvent) => keys.delete(event.code);
     renderer.domElement.addEventListener("pointerdown", onPointerDown);
@@ -394,5 +396,8 @@ export function WorldCanvas({
     };
   }, []);
 
-  return <div className="world-canvas" ref={container} aria-label="Navigable spatial protein atlas" />;
+  return <>
+    <p id="atlas-navigation-help" className="sr-only">Navigate the protein universe with pointer drag, shift drag to pan, wheel to move through scale, W A S D or arrow keys to move, Q and E vertically, Home to return home, R to reset orientation, Backspace to restore the previous camera, and Escape to interrupt automated movement.</p>
+    <div className="world-canvas" ref={container} role="application" tabIndex={0} aria-label="Navigable spatial protein atlas" aria-describedby="atlas-navigation-help" />
+  </>;
 }

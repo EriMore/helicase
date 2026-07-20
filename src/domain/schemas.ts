@@ -2,6 +2,25 @@ import { z } from "zod";
 
 const vec3Schema = z.tuple([z.number().finite(), z.number().finite(), z.number().finite()]);
 
+export const sceneCommandSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("ENTER_ATLAS") }).strict(),
+  z.object({ type: z.literal("FLY_TO_PROTEIN"), proteinId: z.string().min(1).max(40) }).strict(),
+  z.object({ type: z.literal("RETURN_TO_UNIVERSE") }).strict(),
+  z.object({ type: z.literal("SET_CAMERA_CONTEXT"), context: z.object({ position: vec3Schema, target: vec3Schema, scale: z.enum(["universe", "region", "cluster", "protein"]) }) }).strict(),
+  z.object({ type: z.literal("QUERY_ATLAS"), query: z.string().max(240), resultIds: z.array(z.string().max(40)).max(500) }).strict(),
+  z.object({ type: z.literal("CLEAR_QUERY") }).strict(),
+  z.object({ type: z.literal("FOCUS_REGION"), regionId: z.string().min(1).max(48) }).strict(),
+  z.object({ type: z.literal("COLOR_BY"), scheme: z.enum(["confidence", "trusted_core", "hydrophobicity"]) }).strict(),
+  z.object({ type: z.literal("SET_REPRESENTATION"), representation: z.enum(["cartoon", "surface", "ball-and-stick"]) }).strict(),
+  z.object({ type: z.literal("SET_LIGAND_VISIBILITY"), visible: z.boolean() }).strict(),
+  z.object({ type: z.literal("FOCUS_RESIDUES"), start: z.number().int().min(-10_000).max(100_000), end: z.number().int().min(-10_000).max(100_000), chain: z.string().min(1).max(12).optional(), requestId: z.number().int().nonnegative() }).strict(),
+  z.object({ type: z.literal("RETRY_STRUCTURE") }).strict(),
+  z.object({ type: z.literal("START_DESIGN_JOURNEY"), trajectoryId: z.string().min(1).max(120), specification: z.string().min(1).max(500) }).strict(),
+  z.object({ type: z.literal("SET_DESIGN_STAGE"), stageIndex: z.number().int().min(0).max(100) }).strict(),
+  z.object({ type: z.literal("SELECT_DESIGN_CANDIDATE"), candidateId: z.string().min(1).max(120) }).strict(),
+  z.object({ type: z.literal("LEAVE_DESIGN_JOURNEY") }).strict(),
+]);
+
 export const structureReferenceSchema = z.object({
   kind: z.enum(["experimental", "predicted"]),
   accession: z.string().min(1).max(40),
@@ -58,6 +77,27 @@ export const atlasShardSchema = z.object({
 
 export const matchedFieldSchema = z.enum(["identifier", "name", "function", "organism", "family", "class"]);
 
+export const atlasWorkerMessageSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("INDEX_SIZE"), count: z.number().int().nonnegative() }).strict(),
+  z.object({
+    type: z.literal("RESULTS"),
+    requestId: z.number().int().nonnegative(),
+    results: z.array(z.object({
+      id: z.string().min(1).max(40),
+      score: z.number().finite(),
+      matchedBy: z.array(matchedFieldSchema),
+    }).strict()).max(500),
+  }).strict(),
+]);
+
+export const copilotStreamEventSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("meta"), source: z.enum(["gpt-5.6", "local-explicit"]) }).strict(),
+  z.object({ type: z.literal("text_delta"), delta: z.string() }).strict(),
+  z.object({ type: z.literal("tool_call"), call: z.object({ name: z.string(), arguments: z.record(z.string(), z.unknown()) }).strict() }).strict(),
+  z.object({ type: z.literal("error"), message: z.string(), retryable: z.boolean() }).strict(),
+  z.object({ type: z.literal("done") }).strict(),
+]);
+
 export const corpusSearchRequestSchema = z.object({
   query: z.string().trim().min(1).max(240),
   cursor: z.string().regex(/^[A-Za-z0-9_-]+$/).max(512).optional(),
@@ -100,6 +140,19 @@ export const confidenceDatasetSchema = z.object({
   limitations: z.array(z.string()),
 });
 
+export const structureMetadataSchema = z.object({
+  schema: z.literal("helicase.structure.metadata.v1"),
+  structure: structureReferenceSchema,
+  sourceUrl: z.string().url(),
+  retrievedAt: z.string(),
+  chains: z.array(z.object({
+    id: z.string(), entityId: z.string(), description: z.string(), uniprotAccession: z.string().nullable(),
+    entitySequenceCoverage: z.number().min(0).max(1).nullable(), referenceSequenceCoverage: z.number().min(0).max(1).nullable(),
+    alignments: z.array(z.object({ entityStart: z.number().int(), referenceStart: z.number().int(), length: z.number().int().positive(), provenance: z.string() })),
+  })),
+  limitations: z.array(z.string()),
+});
+
 export const provenanceSchema = z.object({
   source: z.string(), method: z.string(), methodVersion: z.string(), generatedAt: z.string(),
   inputIdentity: z.string(), outputIdentity: z.string(), license: z.string().nullable(), limitations: z.array(z.string()),
@@ -126,4 +179,5 @@ export const designTrajectorySchema = z.object({
 });
 
 export type ConfidenceDataset = z.infer<typeof confidenceDatasetSchema>;
+export type StructureMetadata = z.infer<typeof structureMetadataSchema>;
 export type DesignTrajectory = z.infer<typeof designTrajectorySchema>;
