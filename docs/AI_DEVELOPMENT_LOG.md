@@ -1,5 +1,39 @@
 ---
 
+## 2026-07-20T05:40:00+01:00 - Functional-completion closeout
+
+**Phase:** Validation and publication
+
+**Completed**
+- Froze the canonical UI integration contract and kept Three.js, Mol*, scientific adapters, camera policy, and validated scene commands independent of the replaceable shell.
+- Added RCSB/SIFTS chain and residue-coverage metadata, renderer-agnostic representation/ligand controls, author-numbered residue focus, full-protein camera framing, retry, and clean structure disposal.
+- Added runtime validation for SceneController commands, worker output, copilot stream events, structure metadata, and all existing biological payloads.
+- Added complete scene context to the streamed Responses API request, explicit stream cancellation, recoverable tool/precondition errors, and a scientifically honest local mode.
+- Added focus-visible/reduced-motion/keyboard behavior, isolated shell errors, loading/retry/cancellation paths, security headers, environment/deployment documentation, and production dependency remediation.
+- Preserved the official attributable ProteinMPNN 6EHB journey without generating or searching for additional designs.
+- Closed the 48-row audit at 39 complete, 9 evidence-backed blocked, 0 partial, and 0 missing.
+
+**Validation**
+- `npm run typecheck` - passed.
+- `npm test` - 15 tests passed across 3 files.
+- `npm run lint` - passed.
+- `npm run build` - passed with Next.js 16.2.10 and Webpack.
+- `npm audit` - 0 vulnerabilities after upgrading Next.js and pinning patched PostCSS 8.5.10.
+- Production QA at 1440 x 900 - passed: universe navigation, complete-corpus query/materialization, predicted and experimental Mol* inspection, verified pLDDT X-Ray and residue focus, RCSB/SIFTS coverage, existing ProteinMPNN candidate/boundary traversal, streamed local copilot tool execution, and preserved universe return context.
+- Browser console - 0 warnings/errors. Security headers verified on the production response.
+
+**Evidence-backed blockers**
+- Credentialed GPT-5.6 smoke testing requires an external `OPENAI_API_KEY` and model entitlement.
+- Learned/hybrid embeddings, scored structural neighbours, PAE interaction, release-keyed IndexedDB, and verified cross-source chain isolation require separately scoped data, infrastructure, or interaction work recorded in the completion audit.
+- Total serializable scene-store migration is held for the final presentation integration; the stable replacement contract is complete.
+
+**Git**
+- Branch: `agent/functional-completion`.
+- Closeout commit: `6ef1320` (`Complete Atlas engine contracts and production hardening`).
+- PR: #6, to be updated and marked ready after the publication commit.
+
+---
+
 ## 2026-07-20T04:05:00+01:00 - Verified design journey and streamed copilot checkpoint
 
 **Phase:** Functional completion
