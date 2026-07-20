@@ -15,9 +15,9 @@ Turn the attributable 6EHB ProteinMPNN artifact into an interruptible cinematic 
 
 **Git**
 - Branch: `agent/design-trajectory-reveal`.
-- Commit(s): Pending.
-- PR: Pending.
-- Status: Validation in progress.
+- Commit(s): `ef90967` (`Build interruptible design trajectory reveal`).
+- PR: Draft [#7](https://github.com/EriMore/helicase/pull/7).
+- Status: Pushed and validated.
 
 **Next**
 Run the full validation suite and production browser QA at 1440x900.
