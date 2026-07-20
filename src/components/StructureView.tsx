@@ -3,17 +3,27 @@
 import { useEffect, useRef, useState } from "react";
 import { createPluginUI } from "molstar/lib/mol-plugin-ui";
 import { DefaultPluginUISpec } from "molstar/lib/mol-plugin-ui/spec";
+import { PluginSpec } from "molstar/lib/mol-plugin/spec";
+import { MAQualityAssessment, QualityAssessmentPLDDTPreset } from "molstar/lib/extensions/model-archive/quality-assessment/behavior";
 import { Color } from "molstar/lib/mol-util/color";
+import { StructureSelectionQuery } from "molstar/lib/mol-plugin-state/helpers/structure-selection-query";
+import { MolScriptBuilder as B } from "molstar/lib/mol-script/language/builder";
+import type { Structure } from "molstar/lib/mol-model/structure";
 import { createRoot, type Root } from "react-dom/client";
 import type { StructureReference } from "@/domain/atlas-data";
 
-type StructureViewProps = { active: boolean; structure: StructureReference | null };
+export type StructureRepresentation = "cartoon" | "surface" | "ball-and-stick";
+export type ResidueFocus = { start: number; end: number; chain?: string; requestId: number };
+type StructureStatus = "loading" | "ready" | "unavailable";
+type StructureViewProps = { active: boolean; structure: StructureReference | null; confidenceActive?: boolean; representation?: StructureRepresentation; showLigands?: boolean; focusRange?: ResidueFocus | null; retryKey?: number; onStatusChange?: (status: StructureStatus) => void };
 
 const AtlasViewportControls = () => null;
 
-export function StructureView({ active, structure: structureReference }: StructureViewProps) {
+export function StructureView({ active, structure: structureReference, confidenceActive = false, representation = "cartoon", showLigands = true, focusRange = null, retryKey = 0, onStatusChange }: StructureViewProps) {
   const host = useRef<HTMLDivElement>(null);
-  const [status, setStatus] = useState<"loading" | "ready" | "unavailable">("loading");
+  const pluginRef = useRef<Awaited<ReturnType<typeof createPluginUI>> | null>(null);
+  const structureDataRef = useRef<Structure | null>(null);
+  const [status, setStatus] = useState<StructureStatus>("loading");
 
   useEffect(() => {
     if (!active || !host.current || !structureReference) return;
@@ -30,10 +40,10 @@ export function StructureView({ active, structure: structureReference }: Structu
       cleanupQueued = true;
       const pluginToDispose = plugin;
       const rootToUnmount = reactRoot;
-      // Mol* owns a second React root. Defer its teardown until the parent
-      // Atlas render has committed to avoid nested synchronous unmounts.
+      // Remove Mol*'s global custom-property registrations before a replacement
+      // instance starts; defer only the nested React-root teardown.
+      pluginToDispose?.dispose();
       window.setTimeout(() => {
-        pluginToDispose?.dispose();
         rootToUnmount?.unmount();
         target.remove();
       }, 0);
@@ -42,7 +52,9 @@ export function StructureView({ active, structure: structureReference }: Structu
     const initialize = async () => {
       try {
         setStatus("loading");
+        onStatusChange?.("loading");
         const spec = DefaultPluginUISpec();
+        spec.behaviors = [...(spec.behaviors ?? []), PluginSpec.Behavior(MAQualityAssessment, { autoAttach: true, showTooltip: true })];
         spec.components = {
           ...spec.components,
           controls: { top: "none", left: "none", right: "none", bottom: "none" },
@@ -59,6 +71,7 @@ export function StructureView({ active, structure: structureReference }: Structu
             reactRoot.render(element);
           },
         });
+        pluginRef.current = plugin;
         if (disposed) {
           disposeInstance();
           return;
@@ -101,17 +114,19 @@ export function StructureView({ active, structure: structureReference }: Structu
         const model = await plugin.builders.structure.createModel(trajectory);
         if (disposed) return;
         const structure = await plugin.builders.structure.createStructure(model);
+        structureDataRef.current = structure.obj?.data ?? null;
         if (disposed) return;
-        const polymer = await plugin.builders.structure.tryCreateComponentStatic(structure, "polymer");
-        if (polymer) {
-          await plugin.builders.structure.representation.addRepresentation(polymer, {
-            type: "cartoon",
-            color: "uniform",
-            colorParams: { value: Color(0x78d8ff) },
-            typeParams: { alpha: 1, quality: "high" },
-          });
+        if (!experimental && confidenceActive) {
+          await plugin.builders.structure.representation.applyPreset(structure, QualityAssessmentPLDDTPreset);
+        } else {
+          const polymer = await plugin.builders.structure.tryCreateComponentStatic(structure, "polymer");
+          if (polymer) await plugin.builders.structure.representation.addRepresentation(polymer, representation === "surface"
+            ? { type: "molecular-surface", color: "uniform", colorParams: { value: Color(0x3a8fb8) }, typeParams: { alpha: 0.72, quality: "high" } }
+            : representation === "ball-and-stick"
+              ? { type: "ball-and-stick", color: "element-symbol", typeParams: { alpha: 1, quality: "high" } }
+              : { type: "cartoon", color: "uniform", colorParams: { value: Color(0x78d8ff) }, typeParams: { alpha: 1, quality: "high" } });
         }
-        const ligand = await plugin.builders.structure.tryCreateComponentStatic(structure, "ligand");
+        const ligand = showLigands ? await plugin.builders.structure.tryCreateComponentStatic(structure, "ligand") : null;
         if (ligand) {
           await plugin.builders.structure.representation.addRepresentation(ligand, {
             type: "ball-and-stick",
@@ -126,15 +141,30 @@ export function StructureView({ active, structure: structureReference }: Structu
           plugin?.canvas3d?.requestResize();
           plugin?.canvas3d?.requestCameraReset({ durationMs: 0 });
         });
-        if (!disposed) setStatus("ready");
+        if (!disposed) { setStatus("ready"); onStatusChange?.("ready"); }
       } catch {
-        if (!disposed) setStatus("unavailable");
+        if (!disposed) { setStatus("unavailable"); onStatusChange?.("unavailable"); }
       }
     };
 
     void initialize();
-    return () => { disposed = true; disposeInstance(); };
-  }, [active, structureReference]);
+    return () => { disposed = true; pluginRef.current = null; structureDataRef.current = null; disposeInstance(); };
+  }, [active, confidenceActive, onStatusChange, representation, retryKey, showLigands, structureReference]);
+
+  useEffect(() => {
+    const plugin = pluginRef.current; const structure = structureDataRef.current;
+    if (!active || !plugin || !structure || !focusRange) return;
+    const residueTests = [B.core.rel.gre([B.ammp("auth_seq_id"), focusRange.start]), B.core.rel.lte([B.ammp("auth_seq_id"), focusRange.end])];
+    const expression = B.struct.generator.atomGroups({
+      "chain-test": focusRange.chain ? B.core.rel.eq([B.ammp("auth_asym_id"), focusRange.chain]) : undefined,
+      "residue-test": B.core.logic.and(residueTests),
+    });
+    const query = StructureSelectionQuery(`Residues ${focusRange.start}-${focusRange.end}`, expression);
+    plugin.managers.structure.selection.fromSelectionQuery("set", query);
+    const loci = plugin.managers.structure.selection.getLoci(structure);
+    plugin.managers.structure.focus.setFromLoci(loci);
+    plugin.managers.camera.focusLoci(loci, { durationMs: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 520, minRadius: 26, extraRadius: 14 });
+  }, [active, focusRange]);
 
   if (!active || !structureReference) return null;
   return <div className="structure-view" aria-label={`Molecular view for ${structureReference.accession}`}>

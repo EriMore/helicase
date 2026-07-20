@@ -1,5 +1,106 @@
 ---
 
+## 2026-07-20T05:40:00+01:00 - Functional-completion closeout
+
+**Phase:** Validation and publication
+
+**Completed**
+- Froze the canonical UI integration contract and kept Three.js, Mol*, scientific adapters, camera policy, and validated scene commands independent of the replaceable shell.
+- Added RCSB/SIFTS chain and residue-coverage metadata, renderer-agnostic representation/ligand controls, author-numbered residue focus, full-protein camera framing, retry, and clean structure disposal.
+- Added runtime validation for SceneController commands, worker output, copilot stream events, structure metadata, and all existing biological payloads.
+- Added complete scene context to the streamed Responses API request, explicit stream cancellation, recoverable tool/precondition errors, and a scientifically honest local mode.
+- Added focus-visible/reduced-motion/keyboard behavior, isolated shell errors, loading/retry/cancellation paths, security headers, environment/deployment documentation, and production dependency remediation.
+- Preserved the official attributable ProteinMPNN 6EHB journey without generating or searching for additional designs.
+- Closed the 48-row audit at 39 complete, 9 evidence-backed blocked, 0 partial, and 0 missing.
+
+**Validation**
+- `npm run typecheck` - passed.
+- `npm test` - 15 tests passed across 3 files.
+- `npm run lint` - passed.
+- `npm run build` - passed with Next.js 16.2.10 and Webpack.
+- `npm audit` - 0 vulnerabilities after upgrading Next.js and pinning patched PostCSS 8.5.10.
+- Production QA at 1440 x 900 - passed: universe navigation, complete-corpus query/materialization, predicted and experimental Mol* inspection, verified pLDDT X-Ray and residue focus, RCSB/SIFTS coverage, existing ProteinMPNN candidate/boundary traversal, streamed local copilot tool execution, and preserved universe return context.
+- Browser console - 0 warnings/errors. Security headers verified on the production response.
+
+**Evidence-backed blockers**
+- Credentialed GPT-5.6 smoke testing requires an external `OPENAI_API_KEY` and model entitlement.
+- Learned/hybrid embeddings, scored structural neighbours, PAE interaction, release-keyed IndexedDB, and verified cross-source chain isolation require separately scoped data, infrastructure, or interaction work recorded in the completion audit.
+- Total serializable scene-store migration is held for the final presentation integration; the stable replacement contract is complete.
+
+**Git**
+- Branch: `agent/functional-completion`.
+- Closeout commit: `6ef1320` (`Complete Atlas engine contracts and production hardening`).
+- PR: #6, to be updated and marked ready after the publication commit.
+
+---
+
+## 2026-07-20T04:05:00+01:00 - Verified design journey and streamed copilot checkpoint
+
+**Phase:** Functional completion
+
+**Objective**
+Replace decorative design choreography with attributable scientific artifacts and make GPT scene control streamed, cancellable and runtime validated.
+
+**Completed**
+- Imported the official ProteinMPNN example 6 sequence redesign for reviewed UniProt A5F934 / experimental PDB 6EHB, including exact candidate sequences, scores, sequence recovery, model version, repository commit, seed, temperature, source URLs and limitations.
+- Made the evidence boundary explicit: the journey ends before structure prediction, affinity, interface or wet-lab validation because the official example supplies none of those artifacts.
+- Added reversible stage navigation, candidate selection and return-to-source commands through the SceneController reducer.
+- Replaced unvalidated copilot casts with strict Zod argument schemas and a bounded nine-tool surface.
+- Added GPT-5.6 Responses API streaming through a local NDJSON protocol, stale-request abortion, complete query/protein/confidence/design context and an explicit offline stream using the same tool protocol.
+- Revalidated Mol* Confidence X-Ray after synchronous plugin disposal; no browser warnings or errors remained.
+
+**Validation**
+- `npm run typecheck` - passed.
+- `npm test` - 8 tests passed, including the shipped design artifact and rejected copilot arguments.
+- `npm run lint` - passed.
+- `npm run build` - passed.
+- Manual QA at 1440 x 900: A5F934 resolved from the complete reviewed corpus, PDB 6EHB rendered, both ProteinMPNN candidates and the validation boundary were traversable, offline copilot streamed and launched the journey, predicted A0A0R4IVV0 Confidence X-Ray rendered mean pLDDT 89.0 with three very-low-confidence ranges, and the console contained zero warnings/errors.
+
+**Scientific boundary**
+- 3HTN was rejected as the showcase target because its linked accession was not returned by the reviewed-UniProt corpus. 6EHB maps to reviewed accession A5F934 and has an official ProteinMPNN homooligomer output, so it remains discoverable through the production Atlas query path.
+
+**Git**
+- Branch: `agent/functional-completion`, stacked on `agent/protein-universe` pending PR #5.
+- Commit: pending checkpoint commit.
+
+**Next**
+Complete residue/chain structure controls, structural-neighbour navigation, persistence/recovery, credentialed GPT QA and end-to-end automation.
+
+---
+
+## 2026-07-20T03:10:00+01:00 - Functional completion: engine, corpus and confidence checkpoint
+
+**Phase:** Functional completion
+
+**Objective**
+Establish the replaceable UI boundary, complete spatial navigation, make the full reviewed corpus addressable, and replace the confidence placeholder with verified per-residue AlphaFold data.
+
+**Completed**
+- Added the 48-capability completion audit and canonical UI integration contract; recorded that this branch is stacked because PR #5 remains an open draft and `main` does not contain the protein-universe milestone.
+- Extracted a reusable camera engine with orbit, truck, pointer-centered dolly, semantic speed/limits, deterministic focus, cancellation, history, home/reset/back, keyboard controls, context restoration and reduced-motion behavior.
+- Added runtime-validated scientific schemas for Atlas data, corpus responses, confidence datasets and provenance-carrying design trajectories.
+- Added a server-side complete-corpus UniProt adapter with bounded queries, release/total-result provenance, cursor support, cancellation and recoverable local-profile fallback.
+- Materialized remote reviewed-UniProt results into stable deterministic Atlas addresses and the live worker/GPU dataset.
+- Added an official AlphaFold metadata/confidence adapter that preserves residue numbering, model version, source URL, pLDDT ranges, PAE URL and interpretation limits.
+- Registered Mol* model-archive quality assessment explicitly and enabled its pLDDT preset only for predicted structures. Experimental structures remain correctly ineligible.
+
+**Validation**
+- `npm run typecheck` - passed.
+- `npm test` - 6 tests passed.
+- `npm run lint` - passed.
+- `npm run build` - passed; API routes are dynamic and the page remains statically rendered.
+- Manual QA at 1440 x 900: 75,000-protein field held 60 FPS; complete-corpus query `P69905` resolved and materialized; experimental PDB 1A00 rendered; predicted A0A0R4IVV0 resolved mean pLDDT 89.0 and three very-low-confidence ranges.
+- Console was clean before X-Ray. A duplicate Mol* custom-property warning on mode remount was identified and corrected by disposing plugin registrations before deferred nested React teardown; revalidation remains in the next checkpoint.
+
+**Git**
+- Branch: `agent/functional-completion`, stacked on `agent/protein-universe` pending merge of PR #5.
+- Commit: pending checkpoint commit.
+
+**Next**
+Complete the provenance design journey, streaming validated GPT-5.6 tool path, structure residue controls, failure recovery and end-to-end coverage.
+
+---
+
 ## 2026-07-18T20:25:00+01:00 - Protein universe milestone
 
 **Phase:** Full-scale Atlas implementation

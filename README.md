@@ -1,52 +1,50 @@
 # Helicase Atlas
 
-Helicase Atlas is a browser-native instrument for exploring protein space as a navigable night sky, making uncertainty visible, and using GPT-5.6 to reason over and pilot the scene.
+Helicase Atlas is a browser-native scientific instrument for navigating a spatial protein universe, inspecting sourced molecular structures, making predicted-structure confidence visible, and letting GPT-5.6 control the scene through validated tools.
+
+## What works
+
+- A progressively streamed 75,000-protein GPU field derived from 575,503 reviewed UniProt records.
+- Complete reviewed-corpus server search with query-driven materialization into stable Atlas addresses.
+- Damped orbit, truck, pointer-centred dolly, keyboard navigation, semantic zoom, camera history, home/reset, interruption, and spatial-context restoration.
+- Deferred Mol* inspection of experimental RCSB and predicted AlphaFold structures.
+- Verified AlphaFold per-residue pLDDT Confidence X-Ray, unavailable by design for experimental PDB entries.
+- RCSB/SIFTS chain and UniProt residue-coverage metadata for experimental structures.
+- Cartoon, molecular-surface, ball-and-stick, ligand, and residue-range focus controls behind the structure adapter.
+- An attributable precomputed ProteinMPNN sequence-redesign journey for UniProt A5F934 / PDB 6EHB. It stops before unsupported structure, affinity, or wet-lab validation claims.
+- Streamed GPT-5.6 Responses API integration with strict runtime-validated scene tools and an explicit offline fallback.
 
 ## Run locally
 
+Requirements: Node.js 20+ and npm.
+
 ```bash
-npm install
+npm ci
+copy .env.example .env.local
 npm run dev
 ```
 
-Open `http://localhost:3000`.
+Open `http://localhost:3000`. Add `OPENAI_API_KEY` to `.env.local` for the credentialed copilot. Without it, Atlas clearly identifies the local command fallback; search, structures, confidence, design evidence, and navigation remain functional.
 
-Set `OPENAI_API_KEY` to enable the server-side Responses API route. Without it, the copilot uses an explicitly labelled local interaction fallback so the scene remains demonstrable.
+## Validate
 
-## Current implementation
+```bash
+npm run typecheck
+npm test
+npm run lint
+npm run build
+```
 
-- Cinematic loading sequence, staged density field, cited-structure transition, and interruption path.
-- Strict domain commands shared by direct controls and the copilot route.
-- Canonical brand assets are derived into `public/brand/logo/` without modification.
-- A client-only Mol* adapter loads the cited RCSB BinaryCIF structure for PDB 1EMA. This experimental structure has no pLDDT confidence, so Confidence X-Ray remains unavailable until a verified predicted fixture is imported.
-- The current design reveal is a clearly marked choreography fixture. It is **not** a scientific result; it will be replaced only by verified offline RFdiffusion → ProteinMPNN → Boltz-2 trajectory data with provenance and predicted-not-validated scores.
+## Scientific boundaries
 
-## Architecture
+- Atlas proximity currently encodes a deterministic UniProt annotation-family hierarchy, not measured sequence or structural similarity.
+- The 75,000-protein browser profile is staged delivery, not complete indexed coverage; all 575,503 reviewed records remain query-addressable.
+- pLDDT is local confidence for an AlphaFold prediction, not experimental accuracy.
+- ProteinMPNN scores estimate sequence compatibility with a backbone. They are not binding affinity, efficacy, or experimental validation.
+- RCSB/SIFTS coverage may omit unresolved, engineered, inserted, non-UniProt, or ligand residues.
 
-The product and engineering constitution remains under [`docs/`](docs/). Start with the [canonical MVP dossier](docs/product/Helicase_Atlas_BuildWeek_Dossier.md), then [architecture](docs/architecture/ARCHITECTURE.md) and [design system](docs/design/DESIGN_SYSTEM.md).
+## Architecture and operations
 
-## Start here
+Start with [AGENTS.md](AGENTS.md), the [canonical dossier](docs/Helicase_Atlas_BuildWeek_Dossier.md), [architecture](docs/architecture/ARCHITECTURE.md), [UI integration contract](docs/design/UI_INTEGRATION_CONTRACT.md), and [deployment guide](docs/engineering/DEPLOYMENT.md). The [completion audit](docs/planning/PRODUCT_COMPLETION_AUDIT.md) records evidence and remaining external blockers.
 
-- [Vision](VISION.md)
-- [Product theory](PRODUCT_THEORY.md)
-- [Architecture](ARCHITECTURE.md)
-- [System overview](SYSTEM_OVERVIEW.md)
-- [Design principles](DESIGN_PRINCIPLES.md)
-- [Build plan](BUILD_PLAN.md)
-- [Canonical MVP dossier](docs/Helicase_Atlas_BuildWeek_Dossier.md)
-
-## Current status
-
-The first runnable Atlas slice is now implemented. The density field and design choreography remain explicitly labelled fixtures until verified atlas data is imported.
-
-## Product thesis
-
-Helicase should make computational biology feel spatial, alive, and intellectually honest. A user should be able to move from a universe-scale view to a residue-level question, ask GPT-5.6 to investigate, and see the answer expressed through the scene rather than only through prose.
-
-## Future implementation direction
-
-The current direction is Next.js, React, TypeScript, Three.js, Mol*, a thin server boundary, curated scientific fixtures, and a small typed GPT tool surface. These are architectural defaults, not excuses to preserve a weak decision.
-
-## Contribution
-
-Read [CONTRIBUTING.md](CONTRIBUTING.md), [PRINCIPLES.md](PRINCIPLES.md), and [ENGINEERING_PRINCIPLES.md](ENGINEERING_PRINCIPLES.md) before changing the project.
+Canonical logo sources remain under `logo/`; unmodified web derivatives live under `public/brand/logo/`.

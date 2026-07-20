@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import type { SceneMode } from "@/domain/atlas";
 import type { AtlasCluster, AtlasManifest, AtlasProtein, CameraContext } from "@/domain/atlas-data";
+import { CameraNavigation, cameraScale } from "@/engine/camera-navigation";
 
 type WorldMetrics = { fps: number; visibleEntities: number; cameraDistance: number; heapMb: number | null };
 
@@ -14,6 +15,7 @@ type WorldCanvasProps = {
   highlightedIds: string[];
   selectedProteinId: string | null;
   focusedRegionId: string | null;
+  restoreContext: CameraContext | null;
   onSelectProtein: (protein: AtlasProtein, context: CameraContext) => void;
   onFocusCluster: (cluster: AtlasCluster) => void;
   onHoverProtein: (protein: AtlasProtein | null) => void;
@@ -65,15 +67,9 @@ function makePointMaterial(opacity: number) {
   });
 }
 
-function contextScale(distance: number): CameraContext["scale"] {
-  if (distance > 205) return "universe";
-  if (distance > 115) return "region";
-  if (distance > 42) return "cluster";
-  return "protein";
-}
-
 export function WorldCanvas({
   mode, manifest, proteins, highlightedIds, selectedProteinId, focusedRegionId,
+  restoreContext,
   onSelectProtein, onFocusCluster, onHoverProtein, onMetrics,
 }: WorldCanvasProps) {
   const container = useRef<HTMLDivElement>(null);
@@ -88,9 +84,8 @@ export function WorldCanvas({
   const proteinPoints = useRef<THREE.Points | null>(null);
   const clusterIndex = useRef<AtlasCluster[]>([]);
   const proteinIndex = useRef<AtlasProtein[]>([]);
-  const desiredPosition = useRef(new THREE.Vector3(0, 18, 270));
-  const desiredTarget = useRef(new THREE.Vector3());
-  const queryReturnContext = useRef<{ position: THREE.Vector3; target: THREE.Vector3 } | null>(null);
+  const navigation = useRef(new CameraNavigation());
+  const queryReturnContext = useRef<CameraContext | null>(null);
   const queryActive = useRef(false);
   const [sceneEpoch, setSceneEpoch] = useState(0);
 
@@ -103,12 +98,15 @@ export function WorldCanvas({
   useEffect(() => { callbacks.current = { onSelectProtein, onFocusCluster, onHoverProtein, onMetrics }; }, [onFocusCluster, onHoverProtein, onMetrics, onSelectProtein]);
 
   useEffect(() => {
+    if (mode === "universe" && !selectedProteinId && restoreContext) navigation.current.restore(restoreContext);
+  }, [mode, restoreContext, selectedProteinId]);
+
+  useEffect(() => {
     const active = highlightedIds.length > 0;
     if (active && !queryActive.current) {
-      queryReturnContext.current = { position: desiredPosition.current.clone(), target: desiredTarget.current.clone() };
+      queryReturnContext.current = navigation.current.snapshot("before-query");
     } else if (!active && queryActive.current && queryReturnContext.current) {
-      desiredPosition.current.copy(queryReturnContext.current.position);
-      desiredTarget.current.copy(queryReturnContext.current.target);
+      navigation.current.restore(queryReturnContext.current);
       queryReturnContext.current = null;
     }
     queryActive.current = active;
@@ -164,8 +162,7 @@ export function WorldCanvas({
         const centre = matches.reduce((sum, protein) => sum.add(new THREE.Vector3(...protein.position)), new THREE.Vector3()).multiplyScalar(1 / matches.length);
         const radius = matches.reduce((largest, protein) => Math.max(largest, centre.distanceTo(new THREE.Vector3(...protein.position))), 0);
         const framingDistance = THREE.MathUtils.clamp(radius * 1.35 + 38, 85, 155);
-        desiredTarget.current.copy(centre);
-        desiredPosition.current.copy(centre).add(new THREE.Vector3(0, framingDistance * 0.08, framingDistance));
+        navigation.current.focus(centre, framingDistance, "query-results");
       }
     }
   }, [highlightedIds, proteins, sceneEpoch]);
@@ -174,16 +171,14 @@ export function WorldCanvas({
     if (!manifest || !focusedRegionId) return;
     const region = manifest.regions.find((candidate) => candidate.id === focusedRegionId);
     if (!region) return;
-    desiredTarget.current.set(...region.center);
-    desiredPosition.current.set(region.center[0], region.center[1] + 8, region.center[2] + 108);
+    navigation.current.focus(new THREE.Vector3(...region.center), 108, `region-${region.id}`);
   }, [focusedRegionId, manifest]);
 
   useEffect(() => {
     if (!selectedProteinId) return;
     const protein = proteinsRef.current.find((candidate) => candidate.id === selectedProteinId);
     if (!protein) return;
-    desiredTarget.current.set(...protein.position);
-    desiredPosition.current.set(protein.position[0], protein.position[1] + 2.5, protein.position[2] + 18);
+    navigation.current.focus(new THREE.Vector3(...protein.position), 18, `protein-${protein.id}`);
   }, [selectedProteinId]);
 
   useEffect(() => {
@@ -192,8 +187,10 @@ export function WorldCanvas({
     const scene = new THREE.Scene();
     scene.fog = new THREE.FogExp2("#02040a", 0.0032);
     const camera = new THREE.PerspectiveCamera(42, mount.clientWidth / mount.clientHeight, 0.2, 1200);
-    camera.position.copy(desiredPosition.current);
-    const target = desiredTarget.current.clone();
+    const navigator = navigation.current;
+    navigator.reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    camera.position.copy(navigator.position);
+    const target = navigator.target.clone();
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
     renderer.setSize(mount.clientWidth, mount.clientHeight);
@@ -232,7 +229,9 @@ export function WorldCanvas({
     let startY = 0;
     let lastX = 0;
     let lastY = 0;
+    let pointerButton = 0;
     let hoveredId: string | null = null;
+    const keys = new Set<string>();
 
     const updatePointer = (event: PointerEvent) => {
       const rect = renderer.domElement.getBoundingClientRect();
@@ -254,7 +253,9 @@ export function WorldCanvas({
       return hit?.index != null ? clusterIndex.current[hit.index] ?? null : null;
     };
     const onPointerDown = (event: PointerEvent) => {
-      pointerDown = true; moved = false; startX = lastX = event.clientX; startY = lastY = event.clientY;
+      mount.focus({ preventScroll: true });
+      pointerDown = true; moved = false; pointerButton = event.button; startX = lastX = event.clientX; startY = lastY = event.clientY;
+      navigator.cancel();
       renderer.domElement.setPointerCapture(event.pointerId);
     };
     const onPointerMove = (event: PointerEvent) => {
@@ -262,12 +263,8 @@ export function WorldCanvas({
       if (pointerDown) {
         const dx = event.clientX - lastX; const dy = event.clientY - lastY;
         moved ||= Math.hypot(event.clientX - startX, event.clientY - startY) > 5;
-        const distance = camera.position.distanceTo(target);
-        const scale = distance * 0.0017;
-        const right = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 0).multiplyScalar(-dx * scale);
-        const up = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 1).multiplyScalar(dy * scale);
-        desiredPosition.current.add(right).add(up);
-        desiredTarget.current.add(right).add(up);
+        if (pointerButton === 2 || pointerButton === 1 || event.shiftKey) navigator.truck(dx, dy, camera, mount.clientHeight);
+        else navigator.orbit(dx, dy, mount.clientHeight);
         lastX = event.clientX; lastY = event.clientY;
         return;
       }
@@ -290,27 +287,42 @@ export function WorldCanvas({
         callbacks.current.onSelectProtein(protein, {
           position: camera.position.toArray() as [number, number, number],
           target: target.toArray() as [number, number, number],
-          scale: contextScale(distance),
+          scale: cameraScale(distance),
         });
         return;
       }
       const cluster = findCluster();
       if (cluster) {
-        desiredTarget.current.set(...cluster.center);
-        desiredPosition.current.set(cluster.center[0], cluster.center[1] + 4, cluster.center[2] + Math.max(38, Math.min(82, 28 + Math.log2(cluster.count + 1) * 4)));
+        navigator.focus(new THREE.Vector3(...cluster.center), Math.max(38, Math.min(82, 28 + Math.log2(cluster.count + 1) * 4)), `cluster-${cluster.id}`);
         callbacks.current.onFocusCluster(cluster);
       }
     };
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
-      const offset = desiredPosition.current.clone().sub(desiredTarget.current);
-      const distance = THREE.MathUtils.clamp(offset.length() * Math.exp(event.deltaY * 0.0009), 24, 360);
-      desiredPosition.current.copy(desiredTarget.current).add(offset.normalize().multiplyScalar(distance));
+      updatePointer(event as unknown as PointerEvent);
+      raycaster.setFromCamera(pointer, camera);
+      const anchorDistance = camera.position.distanceTo(target);
+      const anchor = raycaster.ray.at(anchorDistance, new THREE.Vector3());
+      const normalizedDelta = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? event.deltaY * 18 : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? event.deltaY * mount.clientHeight : event.deltaY;
+      navigator.dolly(normalizedDelta, anchor);
     };
+    const onContextMenu = (event: MouseEvent) => event.preventDefault();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.target as HTMLElement | null)?.matches("input,textarea,[contenteditable=true]")) return;
+      keys.add(event.code);
+      if (event.code === "Home") { event.preventDefault(); navigator.home(); }
+      if (event.code === "KeyR") navigator.resetOrientation();
+      if (event.code === "Backspace") { event.preventDefault(); navigator.back(); }
+      if (event.code === "Escape") { keys.clear(); navigator.cancel(); }
+    };
+    const onKeyUp = (event: KeyboardEvent) => keys.delete(event.code);
     renderer.domElement.addEventListener("pointerdown", onPointerDown);
     renderer.domElement.addEventListener("pointermove", onPointerMove);
     renderer.domElement.addEventListener("pointerup", onPointerUp);
     renderer.domElement.addEventListener("wheel", onWheel, { passive: false });
+    renderer.domElement.addEventListener("contextmenu", onContextMenu);
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
 
     const onResize = () => {
       camera.aspect = mount.clientWidth / mount.clientHeight;
@@ -327,11 +339,16 @@ export function WorldCanvas({
     const render = () => {
       clock.update();
       const elapsed = clock.getElapsed();
+      const dt = Math.min(clock.getDelta(), 0.05);
       const state = modeRef.current;
-      if (state === "landing") desiredPosition.current.lerp(new THREE.Vector3(0, 20, 278), 0.015);
-      if (state === "universe" && camera.position.length() > 420) desiredPosition.current.set(0, 18, 240);
-      camera.position.lerp(desiredPosition.current, state === "diving" ? 0.075 : 0.065);
-      target.lerp(desiredTarget.current, state === "diving" ? 0.09 : 0.07);
+      if (state === "landing" && navigator.desiredPosition.distanceToSquared(new THREE.Vector3(0, 20, 278)) > 0.5) navigator.focus(new THREE.Vector3(), 278, "landing", false);
+      const forward = Number(keys.has("KeyW") || keys.has("ArrowUp")) - Number(keys.has("KeyS") || keys.has("ArrowDown"));
+      const right = Number(keys.has("KeyD") || keys.has("ArrowRight")) - Number(keys.has("KeyA") || keys.has("ArrowLeft"));
+      const vertical = Number(keys.has("KeyE")) - Number(keys.has("KeyQ"));
+      if (state === "universe" && (forward || right || vertical)) navigator.keyboard(forward, right, vertical, camera, dt);
+      const update = navigator.update(dt);
+      camera.position.copy(update.position);
+      target.copy(update.target);
       camera.lookAt(target);
       const distance = camera.position.distanceTo(target);
       const queryClusterFactor = highlightedRef.current.size ? 0.003 : 1;
@@ -368,6 +385,9 @@ export function WorldCanvas({
       renderer.domElement.removeEventListener("pointermove", onPointerMove);
       renderer.domElement.removeEventListener("pointerup", onPointerUp);
       renderer.domElement.removeEventListener("wheel", onWheel);
+      renderer.domElement.removeEventListener("contextmenu", onContextMenu);
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
       clusters.geometry.dispose(); (clusters.material as THREE.Material).dispose();
       proteinField.geometry.dispose(); (proteinField.material as THREE.Material).dispose();
       dustGeometry.dispose(); dustMaterial.dispose(); renderer.dispose();
@@ -376,5 +396,8 @@ export function WorldCanvas({
     };
   }, []);
 
-  return <div className="world-canvas" ref={container} aria-label="Navigable spatial protein atlas" />;
+  return <>
+    <p id="atlas-navigation-help" className="sr-only">Navigate the protein universe with pointer drag, shift drag to pan, wheel to move through scale, W A S D or arrow keys to move, Q and E vertically, Home to return home, R to reset orientation, Backspace to restore the previous camera, and Escape to interrupt automated movement.</p>
+    <div className="world-canvas" ref={container} role="application" tabIndex={0} aria-label="Navigable spatial protein atlas" aria-describedby="atlas-navigation-help" />
+  </>;
 }

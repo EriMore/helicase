@@ -1,0 +1,118 @@
+{
+  "schema": "helicase.design.trajectory.v1",
+  "id": "proteinmpnn-6ehb-example-6",
+  "targetProteinId": "A5F934",
+  "targetStructureId": "6EHB",
+  "targetSite": { "label": "Homotrimer chains A, B, and C with tied equivalent positions", "residues": [] },
+  "objective": "Redesign the three chains of the 6EHB homooligomer with equivalent positions tied, using the official ProteinMPNN example 6 workflow.",
+  "precomputed": true,
+  "stages": [
+    {
+      "id": "source-complex",
+      "label": "Source complex",
+      "method": "RCSB PDB experimental structure",
+      "description": "The experimentally determined 6EHB Outer membrane protein U homotrimer is the structural input. Equivalent positions across chains A, B, and C are tied during redesign.",
+      "artifactUrl": "https://www.rcsb.org/structure/6EHB",
+      "candidates": [],
+      "provenance": {
+        "source": "RCSB Protein Data Bank and ProteinMPNN official homooligomer input",
+        "method": "Experimental coordinate input",
+        "methodVersion": "PDB 6EHB",
+        "generatedAt": "2017-09-13T00:00:00Z",
+        "inputIdentity": "UniProt A5F934 / RCSB PDB 6EHB",
+        "outputIdentity": "ProteinMPNN inputs/PDB_homooligomers/pdbs/6EHB.pdb",
+        "license": "RCSB PDB data-use terms; ProteinMPNN MIT",
+        "limitations": ["Atlas has not independently re-refined the experimental coordinates or verified full UniProt-to-PDB residue coverage."]
+      }
+    },
+    {
+      "id": "sequence-generation",
+      "label": "Sequence generation",
+      "method": "ProteinMPNN",
+      "description": "Two precomputed homotrimer candidates from the official ProteinMPNN example at sampling temperature 0.2 and seed 37.",
+      "artifactUrl": "https://github.com/dauparas/ProteinMPNN/blob/main/outputs/example_6_outputs/seqs/6EHB.fa",
+      "candidates": [
+        {
+          "id": "6ehb-sample-1",
+          "name": "ProteinMPNN sample 1",
+          "sequence": "GGLNLRSLRPGQVVYESNGSSLALGGSADAILAVKDGKAKDESVGRVRLDRTEKVNDDLYGEGRIELDFTTNDNGTDAVNNNLNVRKLYAGIGGKWGTLTYGKNDGALPSVRDFTDIMPVGGNTALPLIAVGSNVDNTLSYSATIGDLTLRASYRFANAIYVDSNGNVVSEENAAKVSDDGKDGVSVSATYDFGDSGWSLGAGAAYQGDQWAVAVAASYTKDNLYAAAAYVAGTLAKGVPYHGLSLAAAAKVGNVTVTASYDLALVDGKVSEDRLSVGVTYDFTPRFSASVAYEFNLLSXXXASFVASLDKLYYRLRTDF/GGLNLRSLRPGQVVYESNGSSLALGGSADAILAVKDGKAKDESVGRVRLDRTEKVNDDLYGEGRIELDFTTNDNGTDAVNNNLNVRKLYAGIGGKWGTLTYGKNDGALPSVRDFTDIMPVGGNTALPLIAVGSNVDNTLSYSATIGDLTLRASYRFANAIYVDSNGNVVSEENAAKVSDDGKDGVSVSATYDFGDSGWSLGAGAAYQGDQWAVAVAASYTKDNLYAAAAYVAGTLAKGVPYHGLSLAAAAKVGNVTVTASYDLALVDGKVSEDRLSVGVTYDFTPRFSASVAYEFNLLSXXXASFVASLDKLYYRLRTDF/GGLNLRSLRPGQVVYESNGSSLALGGSADAILAVKDGKAKDESVGRVRLDRTEKVNDDLYGEGRIELDFTTNDNGTDAVNNNLNVRKLYAGIGGKWGTLTYGKNDGALPSVRDFTDIMPVGGNTALPLIAVGSNVDNTLSYSATIGDLTLRASYRFANAIYVDSNGNVVSEENAAKVSDDGKDGVSVSATYDFGDSGWSLGAGAAYQGDQWAVAVAASYTKDNLYAAAAYVAGTLAKGVPYHGLSLAAAAKVGNVTVTASYDLALVDGKVSEDRLSVGVTYDFTPRFSASVAYEFNLLSXXXASFVASLDKLYYRLRTDF",
+          "structureUrl": null,
+          "metrics": [
+            { "name": "ProteinMPNN score", "value": 0.9259, "unit": null, "direction": "lower", "source": "Official ProteinMPNN 6EHB.fa" },
+            { "name": "Global score", "value": 0.9259, "unit": null, "direction": "lower", "source": "Official ProteinMPNN 6EHB.fa" },
+            { "name": "Sequence recovery", "value": 0.5058, "unit": "fraction", "direction": "contextual", "source": "Official ProteinMPNN 6EHB.fa" }
+          ],
+          "provenance": {
+            "source": "dauparas/ProteinMPNN official example 6 output",
+            "method": "ProteinMPNN tied-position homooligomer sequence design",
+            "methodVersion": "v_48_020; git 015ff820b9b5741ead6ba6795258f35a9c15e94b",
+            "generatedAt": "2022-08-17T23:11:30Z",
+            "inputIdentity": "PDB 6EHB; chains A,B,C designed with tied equivalent positions; seed 37; T=0.2",
+            "outputIdentity": "6EHB sample 1",
+            "license": "MIT",
+            "limitations": ["Sequence generation is precomputed, not running live.", "No structure-prediction, interface, affinity, or wet-lab validation artifact is supplied for this candidate."]
+          }
+        },
+        {
+          "id": "6ehb-sample-2",
+          "name": "ProteinMPNN sample 2",
+          "sequence": "GGLNLSKPKPGKTVYEENGSTLKLGGYAEANLEIIDGKAKDKSKGRVSLLKTDKINDDLYGTGYIELDYTTNDNGVNAENNILNVRYLYAGIGGKWGTVTYGKYEGALPVIRDFTDIGPVGGNNAAPLIAVGDNIDNTISYSRTDGDWTYRASYRFADMIYVDENGNVVPKSEAARYSDNGKDGVSASAVYDFGDSGWTVGAGAAYQGDQWQAMLAASYEADNFYVAALLTAGQLAKDVPYLGLSLAASYKVGNWTYVANYDVAYVDGKVAEDNLTVGATYDFTPRFSTYVEYTKNLLDXXXASYVASADRLSLGIKTDF/GGLNLSKPKPGKTVYEENGSTLKLGGYAEANLEIIDGKAKDKSKGRVSLLKTDKINDDLYGTGYIELDYTTNDNGVNAENNILNVRYLYAGIGGKWGTVTYGKYEGALPVIRDFTDIGPVGGNNAAPLIAVGDNIDNTISYSRTDGDWTYRASYRFADMIYVDENGNVVPKSEAARYSDNGKDGVSASAVYDFGDSGWTVGAGAAYQGDQWQAMLAASYEADNFYVAALLTAGQLAKDVPYLGLSLAASYKVGNWTYVANYDVAYVDGKVAEDNLTVGATYDFTPRFSTYVEYTKNLLDXXXASYVASADRLSLGIKTDF/GGLNLSKPKPGKTVYEENGSTLKLGGYAEANLEIIDGKAKDKSKGRVSLLKTDKINDDLYGTGYIELDYTTNDNGVNAENNILNVRYLYAGIGGKWGTVTYGKYEGALPVIRDFTDIGPVGGNNAAPLIAVGDNIDNTISYSRTDGDWTYRASYRFADMIYVDENGNVVPKSEAARYSDNGKDGVSASAVYDFGDSGWTVGAGAAYQGDQWQAMLAASYEADNFYVAALLTAGQLAKDVPYLGLSLAASYKVGNWTYVANYDVAYVDGKVAEDNLTVGATYDFTPRFSTYVEYTKNLLDXXXASYVASADRLSLGIKTDF",
+          "structureUrl": null,
+          "metrics": [
+            { "name": "ProteinMPNN score", "value": 0.9138, "unit": null, "direction": "lower", "source": "Official ProteinMPNN 6EHB.fa" },
+            { "name": "Global score", "value": 0.9138, "unit": null, "direction": "lower", "source": "Official ProteinMPNN 6EHB.fa" },
+            { "name": "Sequence recovery", "value": 0.534, "unit": "fraction", "direction": "contextual", "source": "Official ProteinMPNN 6EHB.fa" }
+          ],
+          "provenance": {
+            "source": "dauparas/ProteinMPNN official example 6 output",
+            "method": "ProteinMPNN tied-position homooligomer sequence design",
+            "methodVersion": "v_48_020; git 015ff820b9b5741ead6ba6795258f35a9c15e94b",
+            "generatedAt": "2022-08-17T23:11:30Z",
+            "inputIdentity": "PDB 6EHB; chains A,B,C designed with tied equivalent positions; seed 37; T=0.2",
+            "outputIdentity": "6EHB sample 2",
+            "license": "MIT",
+            "limitations": ["Sequence generation is precomputed, not running live.", "No structure-prediction, interface, affinity, or wet-lab validation artifact is supplied for this candidate."]
+          }
+        }
+      ],
+      "provenance": {
+        "source": "dauparas/ProteinMPNN official repository",
+        "method": "protein_mpnn_run.py example 6 with tied homooligomer positions",
+        "methodVersion": "v_48_020; git 015ff820b9b5741ead6ba6795258f35a9c15e94b",
+        "generatedAt": "2022-08-17T23:11:30Z",
+        "inputIdentity": "PDB 6EHB; chains A,B,C tied and designed",
+        "outputIdentity": "outputs/example_6_outputs/seqs/6EHB.fa",
+        "license": "MIT",
+        "limitations": ["Scores rank ProteinMPNN sequence compatibility; they are not binding affinity or experimental validation."]
+      }
+    },
+    {
+      "id": "validation-boundary",
+      "label": "Validation boundary",
+      "method": "Evidence gate",
+      "description": "No attributable structure-prediction or experimental validation output accompanies the official example. Atlas stops at the evidence boundary instead of inventing a validated reveal.",
+      "artifactUrl": null,
+      "candidates": [],
+      "provenance": {
+        "source": "Helicase evidence policy",
+        "method": "Artifact completeness review",
+        "methodVersion": "helicase.design.evidence-gate.v1",
+        "generatedAt": "2026-07-20T00:00:00Z",
+        "inputIdentity": "ProteinMPNN official example 6 artifacts",
+        "outputIdentity": "Validation unavailable",
+        "license": null,
+        "limitations": ["Future stages require exact structure-prediction, interface, geometry, or wet-lab artifacts and provenance."]
+      }
+    }
+  ],
+  "provenance": {
+    "source": "RCSB PDB 6EHB and dauparas/ProteinMPNN official example 6",
+    "method": "Imported precomputed sequence-redesign journey",
+    "methodVersion": "helicase.design.trajectory.v1",
+    "generatedAt": "2026-07-20T00:00:00Z",
+    "inputIdentity": "PDB 6EHB / UniProt A5F934",
+    "outputIdentity": "proteinmpnn-6ehb-example-6",
+    "license": "Mixed; see stage provenance",
+    "limitations": ["This is sequence redesign, not binder generation.", "The workflow is precomputed and ends before unsupported validation claims."]
+  }
+}

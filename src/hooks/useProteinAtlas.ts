@@ -2,12 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AtlasManifest, AtlasProtein, AtlasSearchResult, AtlasShard } from "@/domain/atlas-data";
-
-type SearchMessage = {
-  type: "RESULTS";
-  requestId: number;
-  results: Array<{ id: string; score: number; matchedBy: AtlasSearchResult["matchedBy"] }>;
-};
+import { atlasManifestSchema, atlasShardSchema, atlasWorkerMessageSchema, corpusSearchResponseSchema } from "@/domain/schemas";
 
 type SearchResolver = (results: AtlasSearchResult[]) => void;
 
@@ -24,20 +19,27 @@ export function useProteinAtlas(active: boolean) {
   const requestId = useRef(0);
   const loadingShards = useRef<Set<string>>(new Set());
   const loadedShards = useRef<Set<string>>(new Set());
+  const remoteSearch = useRef<AbortController | null>(null);
+  const [addressableCount, setAddressableCount] = useState<number | null>(575_503);
 
   useEffect(() => {
     const searches = pendingSearches.current;
     const worker = new Worker("/workers/atlas-search.js");
     workerRef.current = worker;
-    worker.onmessage = (event: MessageEvent<SearchMessage | { type: "INDEX_SIZE"; count: number }>) => {
-      if (event.data.type === "INDEX_SIZE") {
-        setIndexedCount(event.data.count);
+    worker.onmessage = (event: MessageEvent<unknown>) => {
+      const parsed = atlasWorkerMessageSchema.safeParse(event.data);
+      if (!parsed.success) {
+        setError("The Atlas search worker returned an invalid message and was isolated.");
         return;
       }
-      const resolver = pendingSearches.current.get(event.data.requestId);
+      if (parsed.data.type === "INDEX_SIZE") {
+        setIndexedCount(parsed.data.count);
+        return;
+      }
+      const resolver = pendingSearches.current.get(parsed.data.requestId);
       if (!resolver) return;
-      pendingSearches.current.delete(event.data.requestId);
-      resolver(event.data.results.flatMap((result) => {
+      pendingSearches.current.delete(parsed.data.requestId);
+      resolver(parsed.data.results.flatMap((result) => {
         const protein = recordsRef.current.get(result.id);
         return protein ? [{ protein, score: result.score, matchedBy: result.matchedBy }] : [];
       }));
@@ -55,9 +57,10 @@ export function useProteinAtlas(active: boolean) {
     void fetch("/data/atlas/manifest.json", { signal: controller.signal })
       .then((response) => {
         if (!response.ok) throw new Error(`Atlas manifest unavailable (${response.status})`);
-        return response.json() as Promise<AtlasManifest>;
+        return response.json();
       })
-      .then((data) => {
+      .then((unknownData) => {
+        const data = atlasManifestSchema.parse(unknownData) as AtlasManifest;
         setManifest(data);
         setStatus(`Mapped ${data.clusters.length.toLocaleString()} protein families`);
       })
@@ -76,7 +79,7 @@ export function useProteinAtlas(active: boolean) {
     try {
       const response = await fetch(descriptor.href);
       if (!response.ok) throw new Error(`Shard ${id} unavailable (${response.status})`);
-      const shard = await response.json() as AtlasShard;
+      const shard = atlasShardSchema.parse(await response.json()) as AtlasShard;
       const additions = shard.records.filter((record) => !recordsRef.current.has(record.id));
       for (const record of additions) recordsRef.current.set(record.id, record);
       setRecords((current) => current.concat(additions));
@@ -107,7 +110,7 @@ export function useProteinAtlas(active: boolean) {
     return () => { cancelled = true; };
   }, [active, ensureShard, manifest]);
 
-  const search = useCallback((query: string) => new Promise<AtlasSearchResult[]>((resolve) => {
+  const searchLocal = useCallback((query: string) => new Promise<AtlasSearchResult[]>((resolve) => {
     const worker = workerRef.current;
     if (!worker || !query.trim()) {
       resolve([]);
@@ -118,8 +121,44 @@ export function useProteinAtlas(active: boolean) {
     worker.postMessage({ type: "QUERY", requestId: id, query });
   }), []);
 
+  const materialize = useCallback((incoming: AtlasProtein[]) => {
+    const additions = incoming.filter((record) => !recordsRef.current.has(record.id));
+    if (!additions.length) return;
+    for (const record of additions) recordsRef.current.set(record.id, record);
+    setRecords((current) => current.concat(additions));
+    workerRef.current?.postMessage({ type: "ADD_RECORDS", records: additions });
+  }, []);
+
+  const search = useCallback(async (query: string) => {
+    remoteSearch.current?.abort();
+    const controller = new AbortController(); remoteSearch.current = controller;
+    const local = await searchLocal(query);
+    try {
+      const response = await fetch(`/api/atlas/search?q=${encodeURIComponent(query)}&size=60`, { signal: controller.signal });
+      if (!response.ok) throw new Error(`Complete corpus unavailable (${response.status})`);
+      const remote = corpusSearchResponseSchema.parse(await response.json());
+      if (remote.totalResults) setAddressableCount((current) => Math.max(current ?? 0, remote.totalResults ?? 0));
+      materialize(remote.records);
+      const localById = new Map(local.map((result) => [result.protein.id, result]));
+      const combined = remote.records.map((protein, index): AtlasSearchResult => localById.get(protein.id) ?? ({ protein, score: 1000 - index, matchedBy: ["function"] }));
+      for (const result of local) if (!combined.some((candidate) => candidate.protein.id === result.protein.id)) combined.push(result);
+      setError(null); return combined.slice(0, 240);
+    } catch (reason) {
+      if (!controller.signal.aborted) setError(reason instanceof Error ? `${reason.message}; searching the loaded browser profile.` : "Complete corpus unavailable; searching the loaded browser profile.");
+      return local;
+    }
+  }, [materialize, searchLocal]);
+
+  const cancelSearch = useCallback(() => {
+    remoteSearch.current?.abort(); remoteSearch.current = null;
+    requestId.current += 1;
+    for (const resolver of pendingSearches.current.values()) resolver([]);
+    pendingSearches.current.clear();
+    setStatus("Query cancelled · loaded Atlas remains active");
+  }, []);
+
   const recordById = useMemo(() => new Map(records.map((record) => [record.id, record])), [records]);
   const progress = manifest ? Math.min(1, records.length / Math.max(1, manifest.coverage.records)) : 0;
 
-  return { manifest, records, recordById, indexedCount, loadedShardIds, ensureShard, search, status, error, progress };
+  return { manifest, records, recordById, indexedCount, addressableCount, loadedShardIds, ensureShard, search, cancelSearch, materialize, status, error, progress };
 }
