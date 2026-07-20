@@ -8,6 +8,7 @@ import { initialSceneState, reduceScene, type SceneCommand } from "@/domain/atla
 import type { AtlasCluster, AtlasProtein, AtlasSearchResult, CameraContext } from "@/domain/atlas-data";
 import type { CopilotToolCall } from "@/domain/copilot-tools";
 import { useProteinAtlas } from "@/hooks/useProteinAtlas";
+import { useStructureConfidence } from "@/hooks/useStructureConfidence";
 import { WorldCanvas } from "./WorldCanvas";
 
 const StructureView = dynamic(() => import("./StructureView").then((module) => module.StructureView), { ssr: false });
@@ -32,6 +33,7 @@ export function AtlasExperience() {
   const entered = state.mode !== "landing";
   const atlas = useProteinAtlas(entered);
   const selectedProtein = state.selectedProteinId ? atlas.recordById.get(state.selectedProteinId) ?? null : null;
+  const confidence = useStructureConfidence(selectedProtein?.structure ?? null);
 
   const issue = (command: SceneCommand) => dispatch(command);
   const launchDesign = (targetSite: string, specification: string) => {
@@ -137,9 +139,7 @@ export function AtlasExperience() {
   const structureMode = !universeMode;
   const designMode = state.mode === "designing" || state.mode === "designComplete";
   const loaderVisible = !minimumLoadComplete || !atlas.manifest;
-  const coverageLabel = atlas.manifest?.coverage.completeSourceQuery
-    ? `${atlas.manifest.coverage.records.toLocaleString()} reviewed proteins`
-    : `${atlas.manifest?.coverage.records.toLocaleString() ?? "—"} indexed development records`;
+  const coverageLabel = `${(atlas.addressableCount ?? atlas.manifest?.coverage.records ?? 0).toLocaleString()} reviewed proteins addressable · ${(atlas.manifest?.coverage.records ?? 0).toLocaleString()} staged locally`;
   const highlightedIds = useMemo(() => state.queryResultIds, [state.queryResultIds]);
 
   return <main className={`atlas mode-${state.mode}`}>
@@ -150,12 +150,13 @@ export function AtlasExperience() {
       highlightedIds={highlightedIds}
       selectedProteinId={state.selectedProteinId}
       focusedRegionId={state.focusedRegionId}
+      restoreContext={state.cameraContext}
       onSelectProtein={selectProtein}
       onFocusCluster={focusCluster}
       onHoverProtein={setHoveredProtein}
       onMetrics={setMetrics}
     />
-    <StructureView active={structureMode} structure={selectedProtein?.structure ?? null} />
+    <StructureView active={structureMode} structure={selectedProtein?.structure ?? null} confidenceActive={state.mode === "xray"} />
     <div className="atmosphere" />
 
     <header className="masthead">
@@ -221,7 +222,13 @@ export function AtlasExperience() {
         {selectedProtein.structure.kind === "experimental" && <p className="rendering-status">The linked PDB entry may cover a domain, chain, or complex fragment; residue coverage is not yet resolved.</p>}
       </section>
       <button className="return" onClick={() => issue({ type: "RETURN_TO_UNIVERSE" })}>← Return to spatial context</button>
-      {state.mode === "structure" && <button className="xray-trigger" disabled><span>✦</span> Confidence X-ray requires verified confidence extraction</button>}
+      {state.mode === "structure" && <button className="xray-trigger" disabled={confidence.status !== "available"} onClick={() => issue({ type: "COLOR_BY", scheme: "trusted_core" })}><span>✦</span>{confidence.status === "available" ? `Confidence X-ray · mean pLDDT ${confidence.data.mean.toFixed(1)}` : confidence.status === "loading" ? "Resolving AlphaFold per-residue confidence…" : selectedProtein.structure.kind === "experimental" ? "Prediction confidence is undefined for experimental structures" : confidence.error ?? "Verified confidence unavailable"}</button>}
+      {state.mode === "xray" && confidence.status === "available" && <aside className="xray-note">
+        <span>VERIFIED ALPHAFOLD CONFIDENCE</span>
+        <p>Mean pLDDT {confidence.data.mean.toFixed(1)} · {confidence.data.ranges.veryLow.length} very-low-confidence ranges · model {confidence.data.modelVersion}</p>
+        <p>{confidence.data.limitations[0]}</p>
+        <button onClick={() => issue({ type: "COLOR_BY", scheme: "confidence" })}>Return to structure</button>
+      </aside>}
     </>}
 
     {designMode && selectedProtein && <section className="design-hud">

@@ -3,15 +3,17 @@
 import { useEffect, useRef, useState } from "react";
 import { createPluginUI } from "molstar/lib/mol-plugin-ui";
 import { DefaultPluginUISpec } from "molstar/lib/mol-plugin-ui/spec";
+import { PluginSpec } from "molstar/lib/mol-plugin/spec";
+import { MAQualityAssessment, QualityAssessmentPLDDTPreset } from "molstar/lib/extensions/model-archive/quality-assessment/behavior";
 import { Color } from "molstar/lib/mol-util/color";
 import { createRoot, type Root } from "react-dom/client";
 import type { StructureReference } from "@/domain/atlas-data";
 
-type StructureViewProps = { active: boolean; structure: StructureReference | null };
+type StructureViewProps = { active: boolean; structure: StructureReference | null; confidenceActive?: boolean };
 
 const AtlasViewportControls = () => null;
 
-export function StructureView({ active, structure: structureReference }: StructureViewProps) {
+export function StructureView({ active, structure: structureReference, confidenceActive = false }: StructureViewProps) {
   const host = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "unavailable">("loading");
 
@@ -30,10 +32,10 @@ export function StructureView({ active, structure: structureReference }: Structu
       cleanupQueued = true;
       const pluginToDispose = plugin;
       const rootToUnmount = reactRoot;
-      // Mol* owns a second React root. Defer its teardown until the parent
-      // Atlas render has committed to avoid nested synchronous unmounts.
+      // Remove Mol*'s global custom-property registrations before a replacement
+      // instance starts; defer only the nested React-root teardown.
+      pluginToDispose?.dispose();
       window.setTimeout(() => {
-        pluginToDispose?.dispose();
         rootToUnmount?.unmount();
         target.remove();
       }, 0);
@@ -43,6 +45,7 @@ export function StructureView({ active, structure: structureReference }: Structu
       try {
         setStatus("loading");
         const spec = DefaultPluginUISpec();
+        spec.behaviors = [...(spec.behaviors ?? []), PluginSpec.Behavior(MAQualityAssessment, { autoAttach: true, showTooltip: true })];
         spec.components = {
           ...spec.components,
           controls: { top: "none", left: "none", right: "none", bottom: "none" },
@@ -102,13 +105,12 @@ export function StructureView({ active, structure: structureReference }: Structu
         if (disposed) return;
         const structure = await plugin.builders.structure.createStructure(model);
         if (disposed) return;
-        const polymer = await plugin.builders.structure.tryCreateComponentStatic(structure, "polymer");
-        if (polymer) {
-          await plugin.builders.structure.representation.addRepresentation(polymer, {
-            type: "cartoon",
-            color: "uniform",
-            colorParams: { value: Color(0x78d8ff) },
-            typeParams: { alpha: 1, quality: "high" },
+        if (!experimental && confidenceActive) {
+          await plugin.builders.structure.representation.applyPreset(structure, QualityAssessmentPLDDTPreset);
+        } else {
+          const polymer = await plugin.builders.structure.tryCreateComponentStatic(structure, "polymer");
+          if (polymer) await plugin.builders.structure.representation.addRepresentation(polymer, {
+            type: "cartoon", color: "uniform", colorParams: { value: Color(0x78d8ff) }, typeParams: { alpha: 1, quality: "high" },
           });
         }
         const ligand = await plugin.builders.structure.tryCreateComponentStatic(structure, "ligand");
@@ -134,7 +136,7 @@ export function StructureView({ active, structure: structureReference }: Structu
 
     void initialize();
     return () => { disposed = true; disposeInstance(); };
-  }, [active, structureReference]);
+  }, [active, confidenceActive, structureReference]);
 
   if (!active || !structureReference) return null;
   return <div className="structure-view" aria-label={`Molecular view for ${structureReference.accession}`}>

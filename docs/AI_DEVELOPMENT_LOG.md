@@ -1,5 +1,38 @@
 ---
 
+## 2026-07-20T03:10:00+01:00 - Functional completion: engine, corpus and confidence checkpoint
+
+**Phase:** Functional completion
+
+**Objective**
+Establish the replaceable UI boundary, complete spatial navigation, make the full reviewed corpus addressable, and replace the confidence placeholder with verified per-residue AlphaFold data.
+
+**Completed**
+- Added the 48-capability completion audit and canonical UI integration contract; recorded that this branch is stacked because PR #5 remains an open draft and `main` does not contain the protein-universe milestone.
+- Extracted a reusable camera engine with orbit, truck, pointer-centered dolly, semantic speed/limits, deterministic focus, cancellation, history, home/reset/back, keyboard controls, context restoration and reduced-motion behavior.
+- Added runtime-validated scientific schemas for Atlas data, corpus responses, confidence datasets and provenance-carrying design trajectories.
+- Added a server-side complete-corpus UniProt adapter with bounded queries, release/total-result provenance, cursor support, cancellation and recoverable local-profile fallback.
+- Materialized remote reviewed-UniProt results into stable deterministic Atlas addresses and the live worker/GPU dataset.
+- Added an official AlphaFold metadata/confidence adapter that preserves residue numbering, model version, source URL, pLDDT ranges, PAE URL and interpretation limits.
+- Registered Mol* model-archive quality assessment explicitly and enabled its pLDDT preset only for predicted structures. Experimental structures remain correctly ineligible.
+
+**Validation**
+- `npm run typecheck` - passed.
+- `npm test` - 6 tests passed.
+- `npm run lint` - passed.
+- `npm run build` - passed; API routes are dynamic and the page remains statically rendered.
+- Manual QA at 1440 x 900: 75,000-protein field held 60 FPS; complete-corpus query `P69905` resolved and materialized; experimental PDB 1A00 rendered; predicted A0A0R4IVV0 resolved mean pLDDT 89.0 and three very-low-confidence ranges.
+- Console was clean before X-Ray. A duplicate Mol* custom-property warning on mode remount was identified and corrected by disposing plugin registrations before deferred nested React teardown; revalidation remains in the next checkpoint.
+
+**Git**
+- Branch: `agent/functional-completion`, stacked on `agent/protein-universe` pending merge of PR #5.
+- Commit: pending checkpoint commit.
+
+**Next**
+Complete the provenance design journey, streaming validated GPT-5.6 tool path, structure residue controls, failure recovery and end-to-end coverage.
+
+---
+
 ## 2026-07-18T20:25:00+01:00 - Protein universe milestone
 
 **Phase:** Full-scale Atlas implementation
