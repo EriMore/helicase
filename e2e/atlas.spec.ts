@@ -93,7 +93,9 @@ test.describe("Helicase Atlas — core shell", () => {
   });
 
   test("query matches are reliably selectable across the viewport at normal zoom, and non-matches never are", async ({ page }) => {
-    test.setTimeout(120_000);
+    // The 42-point grid sweep is the slowest test in this suite by design (breadth over
+    // speed); give it real headroom rather than the default 120s margin other tests use.
+    test.setTimeout(240_000);
     await page.setViewportSize({ width: 1920, height: 1080 });
     await waitForAtlasReady(page);
     await page.locator(".hx-query-input").fill("kinase");
@@ -138,7 +140,9 @@ test.describe("Helicase Atlas — core shell", () => {
   });
 
   test("relationship thread endpoints project exactly onto their real proteins' screen positions", async ({ page }) => {
-    test.setTimeout(120_000);
+    // Also grid-sweeps to find a protein and reveal threads — same headroom rationale as
+    // the query-selectability test above.
+    test.setTimeout(240_000);
     await waitForAtlasReady(page);
     // A screenshot alone can't prove a thread is anchored correctly — project every
     // endpoint with the exact camera the renderer uses and compare against each protein's
