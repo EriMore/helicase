@@ -1,5 +1,48 @@
 ---
 
+## 2026-07-21T09:50:00+00:00 - Live user-testing bugfix round 3: selection/query visual language, identity panel, navigation chrome, honest design-trajectory motion
+
+**Phase:** Bugfix / iteration on live user feedback
+
+**Objective**
+Address a large, detailed batch of follow-up feedback from live testing of round 2's build: 2 console bugs plus roughly 15 distinct design/interaction change requests spanning selection feedback, query interaction, territory-label legibility, relationship threads, the identity panel, dark-mode structure contrast, Depth Rail motion, the Design trajectory panel, and navigation chrome.
+
+**Completed**
+- Fixed an SSR/`localStorage` hydration mismatch (`useTheme`, `useSound`) and a raw-`<script>` React console warning (`app/layout.tsx` → `next/script`).
+- Removed the round-2 neighbourhood auto-label pool entirely — it directly conflicted with "no protein name unless hovering" and was the root cause of a reported label-clutter screenshot.
+- Replaced the bracket-marker selection indicator with a custom-shader billboarded "petri dish" (frosted, rim-lit, light-direction rotates with camera) and unified selection + query-match highlighting into one shader-driven mechanism (`aMatch`: grow + glow + pulse), fading everything else via `uDimNon`.
+- Removed the round-2 query grid/shell relocation layout entirely, per explicit rejection from the user — matches now highlight in place at their real positions; the camera reframes to a bounding sphere of those real positions instead.
+- Added pointer-priority for territory labels over protein-dot hover/click (real `getBoundingClientRect()` checks in the canvas pointer handlers) and a glass-backed pill treatment for label contrast.
+- Relationship threads: raised 3→5, fixed left-alignment (root cause: `<button>` defaults to `text-align:center`), unified to teal (removed the per-type color map), removed the large solid-color endpoint spheres (related proteins now keep normal point size, exempted from field fade via a new `aExempt` attribute).
+- Restructured the Identity panel into a fixed, non-scrolling header + scrollable body, added an explicit close button, and wired both the close button and a click-on-empty-space gesture to `RETURN_ONE_LEVEL`; panel now also renders during Inspect.
+- Made Mol* lighting theme-aware and boosted for dark mode; added an explicitly-labeled `ROTATE` camera-orbit toggle (not a fabricated dynamics simulation), auto-enabled during Design playback.
+- Added a tasteful glitch-style hover keyframe to the Depth Rail.
+- Added a real character-level sequence-diff comparison strip (two real ProteinMPNN candidates) and a `PROMPT THAT YIELDS THIS` line to the Design trajectory panel; improved the two evidence-gate beats to name a real documented artifact class that would fill each gap, without fabricating one. Deliberately skipped a 3D residue-level highlight — the candidate-sequence-to-`auth_seq_id` numbering correspondence was not verified this pass, and an incorrect highlight would be worse than an honest gap.
+- Added a top-left `‹ BACK` button, made the orbit/pan/zoom nav hint persistent (was hide-after-first-hover), and right-aligned the query bar + suggestion chips.
+- **Caught two regressions during this round's own validation, before they reached the user:** a real WebGL shader-precision mismatch on the newly-added `uTime` uniform (`highp` in vertex, `mediump` in fragment — fixed by an explicit `uniform highp float uTime;` in the fragment shader), and an accidental drop of the query-bar label-exclusion-zone logic from a prior round's fix (`DESIGN_DELTA.md` item 4) during the `WorldCanvas.tsx` rewrite — re-added and recomputed for the query bar's new right-anchored position. Both were root-caused with the same tools used in prior rounds (Playwright console-error capture and a direct `inputValue()`-before/after diagnostic script), not guessed at.
+- Recorded every deliberate deviation from the original design spec introduced this round in `docs/handoff/DESIGN_DELTA.md` (items 8–11), including one flagged for re-confirmation against the user's literal request (glass-backed labels vs. literal dynamic per-pixel text color).
+
+**Validation**
+- `npm run typecheck`, `npm run lint`, `npm test` (26/26) — pass.
+- `npm run build` — pass.
+- `npm run test:e2e` — **7/7 pass**, confirmed on a clean re-run after both regression fixes.
+- Manual scripted Playwright verification (screenshots) of: selection glow/pulse/petri-dish in both themes, in-place query highlighting, territory entry with legible glass-backed labels and a working `‹ BACK`, the identity panel's close-button return-one-level behavior, and the Depth Rail hover state.
+
+**Files**
+- Modified: `app/layout.tsx`, `app/globals.css`, `src/hooks/useTheme.ts`, `src/hooks/useSound.ts`, `src/components/WorldCanvas.tsx`, `src/components/IdentityPanel.tsx`, `src/components/AtlasExperience.tsx`, `src/components/Header.tsx`, `src/components/StructureView.tsx`, `src/components/InspectPanel.tsx`, `src/components/DesignPanel.tsx`, `docs/handoff/DESIGN_DELTA.md`, `docs/handoff/CURRENT_STATE.md`.
+
+**Git**
+- Branch: `claude/final-implementation`.
+- PR: #11 (draft, targeting `integration/claude-handoff`).
+
+**Codex**
+- Session ID: Pending (/feedback)
+
+**Next**
+Re-confirm the territory-label glass-backing substitution against the user's literal request. If pursued further: source a real RFdiffusion backbone trajectory and/or real AlphaFold2/ESMFold predictions for the two ProteinMPNN 6EHB candidates (with verified residue-numbering correspondence) to fully animate the Design trajectory panel.
+
+---
+
 ## 2026-07-21T01:20:00+00:00 - Claude Design realized on the production engine (spatial hierarchy, all design-package components)
 
 **Phase:** Implementation

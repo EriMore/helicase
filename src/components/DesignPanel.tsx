@@ -1,7 +1,35 @@
 "use client";
 
+import { useMemo } from "react";
 import type { DesignState } from "@/domain/atlas";
 import type { DesignTrajectory } from "@/domain/schemas";
+
+const SEQ_PREVIEW_LEN = 90;
+
+/** First-chain (A) slice of a homotrimer candidate sequence — chains are tied/identical, so
+ * this is representative of all three. Purely a display truncation, not a data transform. */
+function chainA(sequence: string): string {
+  return sequence.split("/")[0] ?? sequence;
+}
+
+function SequenceCompareStrip({ a, b, activeId, aId, bId }: { a: string; b: string; activeId: string | null; aId: string; bId: string }) {
+  const chars = useMemo(() => {
+    const seqA = chainA(a); const seqB = chainA(b);
+    const len = Math.min(seqA.length, SEQ_PREVIEW_LEN);
+    return Array.from({ length: len }, (_, index) => ({ char: seqA[index], differs: seqA[index] !== seqB[index] }));
+  }, [a, b]);
+  return (
+    <div className="hx-design-seq-strip mono" key={activeId ?? "both"}>
+      {chars.map((entry, index) => (
+        <span key={index} className={`hx-design-seq-char ${entry.differs ? "diff" : ""}`} style={{ animationDelay: `${index * 9}ms` }}>{entry.char}</span>
+      ))}
+      <span className="hx-design-seq-more">… {chainA(a).length} aa total, chain A shown</span>
+      <div className="hx-design-seq-legend mono">
+        <span><span className="hx-design-seq-swatch diff" /> differs between {aId.replace("6ehb-sample-", "sample ")} and {bId.replace("6ehb-sample-", "sample ")}</span>
+      </div>
+    </div>
+  );
+}
 
 export type DesignBeat = {
   id: string;
@@ -47,6 +75,9 @@ export function DesignPanel({ proteinName, trajectory, design, onPlayPause, onSe
   const validationStage = trajectory.stages.find((stage) => stage.id === "validation-boundary");
   const candidates = sequenceStage?.candidates ?? [];
   const selectedCandidate = candidates.find((candidate) => candidate.id === design.selectedCandidateId) ?? candidates[0] ?? null;
+  const comparablePair = candidates.length >= 2 && candidates[0].sequence && candidates[1].sequence
+    ? { a: candidates[0].sequence, b: candidates[1].sequence, aId: candidates[0].id, bId: candidates[1].id }
+    : null;
 
   return (
     <div className="hx-design hx-glass">
@@ -55,6 +86,10 @@ export function DesignPanel({ proteinName, trajectory, design, onPlayPause, onSe
         <button className="hx-design-exit mono" onClick={onExit}>EXIT ✕</button>
       </div>
       <div className="hx-design-from">From {proteinName}</div>
+      <div className="hx-design-prompt">
+        <span className="hx-design-prompt-k mono">PROMPT THAT YIELDS THIS</span>
+        <p className="hx-design-prompt-v">&ldquo;{design.specification}&rdquo;</p>
+      </div>
 
       <div className="hx-design-transport">
         <button className="hx-design-play" onClick={onPlayPause} aria-label={design.playback === "playing" ? "Pause" : "Play"}>{design.playback === "playing" ? "❚❚" : "▸"}</button>
@@ -86,7 +121,7 @@ export function DesignPanel({ proteinName, trajectory, design, onPlayPause, onSe
 
         {beat.id === "backbone" && <>
           <div className="hx-design-stage-tag mono">BACKBONE CANDIDATES</div>
-          <div className="hx-design-evidence-gate">No RFdiffusion-class backbone-generation artifact accompanies this example. Atlas does not fabricate intermediate backbone frames — this beat is an honest evidence gate, not a computed result.</div>
+          <div className="hx-design-evidence-gate">No RFdiffusion-class backbone-generation artifact accompanies this example. Atlas does not fabricate intermediate backbone frames — this beat is an honest evidence gate, not a computed result. A real equivalent does exist elsewhere: RFdiffusion&apos;s published motif-scaffolding examples (e.g. the PDB 5TPN binder case) ship full backbone-denoising trajectories with every timestep as a separate model — that class of artifact is what would populate this beat.</div>
         </>}
 
         {beat.id === "sequence" && sequenceStage && <>
@@ -100,11 +135,14 @@ export function DesignPanel({ proteinName, trajectory, design, onPlayPause, onSe
               </div>
             ))}
           </div>
+          {comparablePair && (
+            <SequenceCompareStrip a={comparablePair.a} b={comparablePair.b} activeId={beat.id} aId={comparablePair.aId} bId={comparablePair.bId} />
+          )}
         </>}
 
         {beat.id === "fold" && <>
           <div className="hx-design-stage-tag mono">PREDICTED FOLD & METRICS</div>
-          <div className="hx-design-evidence-gate">No structure-prediction artifact (AlphaFold2/Boltz-class) exists for these designed sequences in the official example. Only the real ProteinMPNN compatibility score above is available — Atlas will not invent a fold, pLDDT, pTM, or ipTM value.</div>
+          <div className="hx-design-evidence-gate">No structure-prediction artifact (AlphaFold2/Boltz-class) exists for these designed sequences in the official example. Only the real ProteinMPNN compatibility score above is available — Atlas will not invent a fold, pLDDT, pTM, or ipTM value. A real equivalent would be an AlphaFold2 or ESMFold prediction run directly on each candidate sequence above, which Atlas has not computed or sourced for this example.</div>
         </>}
 
         {beat.id === "compare" && <>
@@ -118,6 +156,9 @@ export function DesignPanel({ proteinName, trajectory, design, onPlayPause, onSe
               </button>
             ))}
           </div>
+          {comparablePair && (
+            <SequenceCompareStrip a={comparablePair.a} b={comparablePair.b} activeId={selectedCandidate?.id ?? beat.id} aId={comparablePair.aId} bId={comparablePair.bId} />
+          )}
         </>}
 
         {beat.id === "resolve" && validationStage && <>

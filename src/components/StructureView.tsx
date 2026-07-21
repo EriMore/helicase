@@ -22,6 +22,8 @@ type StructureViewProps = {
   representation?: StructureRepresentation; colorMode?: StructureColorMode; domains?: StructureDomain[];
   showLigands?: boolean; focusRange?: ResidueFocus | null; retryKey?: number; onStatusChange?: (status: StructureStatus) => void;
   onResiduePick?: (residueNumber: number, chain: string) => void;
+  theme?: "light" | "dark";
+  autoRotate?: boolean;
 };
 
 const AtlasViewportControls = () => null;
@@ -33,7 +35,7 @@ const REPRESENTATION_PARAMS: Record<Exclude<StructureRepresentation, "cartoon">,
   spacefill: { type: "spacefill", typeParams: { alpha: 1, quality: "high" } },
 };
 
-export function StructureView({ active, structure: structureReference, confidenceActive = false, representation = "cartoon", colorMode = "chain", domains = [], showLigands = true, focusRange = null, retryKey = 0, onStatusChange, onResiduePick }: StructureViewProps) {
+export function StructureView({ active, structure: structureReference, confidenceActive = false, representation = "cartoon", colorMode = "chain", domains = [], showLigands = true, focusRange = null, retryKey = 0, onStatusChange, onResiduePick, theme = "light", autoRotate = false }: StructureViewProps) {
   const host = useRef<HTMLDivElement>(null);
   const pluginRef = useRef<Awaited<ReturnType<typeof createPluginUI>> | null>(null);
   const structureDataRef = useRef<Structure | null>(null);
@@ -190,6 +192,21 @@ export function StructureView({ active, structure: structureReference, confidenc
     void initialize();
     return () => { disposed = true; pluginRef.current = null; structureDataRef.current = null; disposeInstance(); };
   }, [active, confidenceActive, onStatusChange, representation, colorMode, domains, retryKey, showLigands, structureReference]);
+
+  // Lighting/rotation are visual-only and cheap to re-apply, so they live in their
+  // own effect instead of the init effect above — toggling either must never trigger
+  // a full Mol* plugin remount (redownloading and reparsing the structure).
+  useEffect(() => {
+    const plugin = pluginRef.current;
+    if (!active || !plugin) return;
+    const dark = theme === "dark";
+    plugin.canvas3d?.setProps({
+      renderer: { exposure: dark ? 1.08 : 0.72, ambientIntensity: dark ? 0.7 : 0.46, interiorDarkening: dark ? 0.2 : 0.42 },
+      // A slow, honest camera-orbit spin — not a molecular-dynamics simulation. Atlas does not
+      // fabricate conformational motion; see docs/SCIENTIFIC_DATA_BOUNDARIES.md.
+      trackball: { animate: autoRotate ? { name: "spin", params: { speed: 0.35 } } : { name: "off", params: {} } },
+    });
+  }, [active, theme, autoRotate, status]);
 
   useEffect(() => {
     const plugin = pluginRef.current; const structure = structureDataRef.current;

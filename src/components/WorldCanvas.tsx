@@ -11,26 +11,27 @@ import { CAMERA_FAR, CAMERA_FOV, CAMERA_NEAR, CameraEngine, TWEEN_MS } from "@/e
 export type Theme = "light" | "dark";
 export type WorldMetrics = { fps: number; visibleCount: number };
 
-const THEME_TABLE: Record<Theme, { fam: string[]; teal: string; fog: string; fogNear: number; fogFar: number; size: number; additive: boolean; dimNon: number }> = {
-  light: { fam: ["#3c5a86", "#8f4a44", "#3f6f60", "#9a7a34", "#6a4a70", "#4a4f57"], teal: "#0c8c78", fog: "#efece4", fogNear: 300, fogFar: 1200, size: 22, additive: false, dimNon: 0.30 },
-  dark: { fam: ["#7d97d0", "#d68b83", "#5fc6a6", "#d9b96e", "#b490c8", "#9aa2b0"], teal: "#34d6b8", fog: "#0d1013", fogNear: 440, fogFar: 2400, size: 26, additive: true, dimNon: 0.26 },
+const THEME_TABLE: Record<Theme, { fam: string[]; teal: string; fog: string; fogNear: number; fogFar: number; size: number; additive: boolean; dimNon: number; glow: string; dishTint: string; dishRim: string }> = {
+  light: { fam: ["#3c5a86", "#8f4a44", "#3f6f60", "#9a7a34", "#6a4a70", "#4a4f57"], teal: "#0c8c78", fog: "#efece4", fogNear: 300, fogFar: 1200, size: 22, additive: false, dimNon: 0.30, glow: "#22262b", dishTint: "#f3f1ea", dishRim: "#ffffff" },
+  dark: { fam: ["#7d97d0", "#d68b83", "#5fc6a6", "#d9b96e", "#b490c8", "#9aa2b0"], teal: "#34d6b8", fog: "#0d1013", fogNear: 440, fogFar: 2400, size: 26, additive: true, dimNon: 0.26, glow: "#ffffff", dishTint: "#11141a", dishRim: "#9fd8ff" },
 };
-const THREAD_COLOR: Record<string, string> = { "Shared family": "#b07b3a", "Shared classification": "#7a6a9c" };
-const NEIGHBOUR_LABEL_POOL = 14;
-const NEIGHBOUR_RADIUS = 190;
+const THREAD_LIMIT = 5;
 
 const pointVertexShader = `
 attribute vec3 color;
 attribute float aScale;
 attribute float aMatch;
+attribute float aExempt;
 attribute float aTerritory;
-uniform float uSize, uPR, uFogNear, uFogFar;
+uniform float uSize, uPR, uFogNear, uFogFar, uTime;
 varying vec3 vColor;
-varying float vFog, vMatch, vTerritory;
+varying float vFog, vMatch, vExempt, vTerritory;
 void main() {
-  vColor = color; vMatch = aMatch; vTerritory = aTerritory;
+  vColor = color; vMatch = aMatch; vExempt = aExempt; vTerritory = aTerritory;
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
-  gl_PointSize = min(aScale * uSize * uPR * (300.0 / -mv.z), 26.0 * uPR);
+  float pulse = 0.5 + 0.5 * sin(uTime * 2.1);
+  float grow = 1.0 + aMatch * (0.55 + 0.3 * pulse);
+  gl_PointSize = min(aScale * uSize * uPR * grow * (300.0 / -mv.z), 42.0 * uPR);
   float d = -mv.z;
   vFog = clamp((d - uFogNear) / (uFogFar - uFogNear), 0.0, 1.0);
   gl_Position = projectionMatrix * mv;
@@ -38,50 +39,65 @@ void main() {
 
 const pointFragmentShader = `
 precision mediump float;
-varying vec3 vColor; varying float vFog, vMatch, vTerritory;
-uniform vec3 uFog, uTeal; uniform float uTheme, uDim, uDimNon, uActiveTerritory, uTerritoryFocus;
+varying vec3 vColor; varying float vFog, vMatch, vExempt, vTerritory;
+uniform vec3 uFog, uTeal, uGlow; uniform float uTheme, uDim, uDimNon, uActiveTerritory, uTerritoryFocus;
+uniform highp float uTime;
 void main() {
   vec2 uv = gl_PointCoord - 0.5;
   float d = length(uv);
-  float a = smoothstep(0.5, 0.24, d);
+  // Highlighted (selected/matched) points read as a soft glowing "blot" —
+  // everything else stays a crisp, defined dot.
+  float edge = mix(0.24, 0.42, vMatch);
+  float a = smoothstep(0.5, edge, d);
   if (a <= 0.002) discard;
-  vec3 c = mix(vColor, uTeal, vMatch * 0.9);
+  float pulse = 0.5 + 0.5 * sin(uTime * 2.1);
+  vec3 c = mix(vColor, uTeal, vMatch * 0.55);
+  c = mix(c, uGlow, vMatch * (0.32 + 0.22 * pulse));
   float fogMix = uTheme < 0.5 ? 0.9 : 0.35;
-  c = mix(c, uFog, vFog * fogMix);
+  c = mix(c, uFog, vFog * fogMix * (1.0 - vMatch));
   float alpha = a;
   alpha *= mix(1.0, 1.0 - vFog * 0.82, step(uTheme, 0.5));
-  // Additive dark-mode blending saturates to white at 75,000-point density —
-  // dampen per-point alpha so overlapping points glow without blowing out.
-  alpha *= mix(1.0, 0.42, step(0.5, uTheme));
+  alpha *= mix(1.0, 0.42, step(0.5, uTheme)) * (1.0 - vMatch) + vMatch;
   alpha *= uDim;
-  alpha *= mix(uDimNon, 1.0, vMatch);
-  if (uTerritoryFocus > 0.5) { float m = abs(vTerritory - uActiveTerritory) < 0.5 ? 1.0 : uDimNon; alpha *= m; }
-  gl_FragColor = vec4(c, alpha);
+  float keep = max(vMatch, vExempt);
+  alpha *= mix(uDimNon, 1.0, keep);
+  if (uTerritoryFocus > 0.5) { float m = abs(vTerritory - uActiveTerritory) < 0.5 ? 1.0 : uDimNon; alpha *= mix(m, 1.0, keep); }
+  gl_FragColor = vec4(c, clamp(alpha, 0.0, 1.0));
+}`;
+
+const dishVertexShader = `
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}`;
+
+const dishFragmentShader = `
+precision mediump float;
+varying vec2 vUv;
+uniform vec3 uTint; uniform vec3 uRim; uniform float uOpacity; uniform vec2 uLightDir; uniform float uPulse;
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+void main() {
+  vec2 c = vUv - 0.5;
+  float d = length(c) * 2.0;
+  if (d > 1.0) discard;
+  float rim = smoothstep(0.58, 1.0, d);
+  vec2 n = length(c) > 0.0001 ? normalize(c) : vec2(0.0);
+  float spec = pow(max(0.0, dot(n, uLightDir)), 5.0) * smoothstep(1.0, 0.25, d);
+  float grain = (hash(floor(vUv * 180.0)) - 0.5) * 0.05;
+  float alpha = (0.16 + rim * 0.3 + spec * 0.45 + grain) * uOpacity * (0.82 + 0.18 * uPulse);
+  vec3 color = mix(uTint, uRim, clamp(rim * 0.7 + spec * 0.7, 0.0, 1.0));
+  gl_FragColor = vec4(color, clamp(alpha, 0.0, 0.92));
 }`;
 
 type ThreeRefs = {
   renderer: THREE.WebGLRenderer; sceneObj: THREE.Scene; camera: THREE.PerspectiveCamera;
   points: THREE.Points; geometry: THREE.BufferGeometry; material: THREE.ShaderMaterial;
   base: Float32Array; target: Float32Array; territoryIndex: Int16Array;
-  marker: THREE.Sprite; raycaster: THREE.Raycaster; threadGroup: THREE.Group;
+  dish: THREE.Mesh; dishMaterial: THREE.ShaderMaterial; raycaster: THREE.Raycaster; threadGroup: THREE.Group;
   proteinList: AtlasProtein[];
   threadKey: string;
 };
-
-function makeBracketTexture(): THREE.CanvasTexture {
-  const canvas = document.createElement("canvas");
-  canvas.width = 128; canvas.height = 128;
-  const ctx = canvas.getContext("2d")!;
-  ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 6; ctx.lineCap = "square";
-  const pad = 18; const len = 30; const size = 128;
-  const corners: Array<[number, number, number, number]> = [[pad, pad, 1, 1], [size - pad, pad, -1, 1], [pad, size - pad, 1, -1], [size - pad, size - pad, -1, -1]];
-  for (const [cx, cy, sx, sy] of corners) {
-    ctx.beginPath();
-    ctx.moveTo(cx, cy + sy * len); ctx.lineTo(cx, cy); ctx.lineTo(cx + sx * len, cy);
-    ctx.stroke();
-  }
-  return new THREE.CanvasTexture(canvas);
-}
 
 type WorldCanvasProps = {
   theme: Theme;
@@ -91,25 +107,25 @@ type WorldCanvasProps = {
   onEnterTerritory: (territoryId: string) => void;
   onHoverProtein: (protein: AtlasProtein | null) => void;
   onMetrics: (metrics: WorldMetrics) => void;
+  onDeselect: () => void;
 };
 
-export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTerritory, onHoverProtein, onMetrics }: WorldCanvasProps) {
+export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTerritory, onHoverProtein, onMetrics, onDeselect }: WorldCanvasProps) {
   const container = useRef<HTMLDivElement>(null);
   const labelsWrap = useRef<HTMLDivElement>(null);
   const territoryLabelEls = useRef<HTMLDivElement[]>([]);
   const hoverLabelEl = useRef<HTMLDivElement | null>(null);
-  const neighbourLabelEls = useRef<HTMLDivElement[]>([]);
 
   const engine = useRef(new CameraEngine());
   const sceneRef = useRef(scene);
   const themeRef = useRef(theme);
   const proteinsRef = useRef(proteins);
-  const callbacks = useRef({ onSelectProtein, onEnterTerritory, onHoverProtein, onMetrics });
+  const callbacks = useRef({ onSelectProtein, onEnterTerritory, onHoverProtein, onMetrics, onDeselect });
 
   useEffect(() => { sceneRef.current = scene; }, [scene]);
   useEffect(() => { themeRef.current = theme; }, [theme]);
   useEffect(() => { proteinsRef.current = proteins; }, [proteins]);
-  useEffect(() => { callbacks.current = { onSelectProtein, onEnterTerritory, onHoverProtein, onMetrics }; }, [onSelectProtein, onEnterTerritory, onHoverProtein, onMetrics]);
+  useEffect(() => { callbacks.current = { onSelectProtein, onEnterTerritory, onHoverProtein, onMetrics, onDeselect }; }, [onSelectProtein, onEnterTerritory, onHoverProtein, onMetrics, onDeselect]);
 
   const three = useRef<ThreeRefs | null>(null);
 
@@ -123,9 +139,11 @@ export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTe
     const color = new Float32Array(count * 3);
     const scale = new Float32Array(count);
     const match = new Float32Array(count);
+    const exempt = new Float32Array(count);
     const territoryIndex = new Int16Array(count);
     const table = THEME_TABLE[themeRef.current];
     const highlighted = new Set(sceneRef.current.queryResultIds);
+    if (sceneRef.current.selectedProteinId) highlighted.add(sceneRef.current.selectedProteinId);
     const activeTerritory = territories.findIndex((territory) => territory.id === sceneRef.current.territoryId);
     proteins.forEach((protein, index) => {
       const [wx, wy, wz] = worldPosition(protein.position);
@@ -151,6 +169,7 @@ export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTe
     geometry.setAttribute("color", new THREE.BufferAttribute(color, 3));
     geometry.setAttribute("aScale", new THREE.BufferAttribute(scale, 1));
     geometry.setAttribute("aMatch", new THREE.BufferAttribute(match, 1));
+    geometry.setAttribute("aExempt", new THREE.BufferAttribute(exempt, 1));
     geometry.setAttribute("aTerritory", new THREE.BufferAttribute(territoryIndex.map(Number), 1));
     geometry.computeBoundingSphere();
     t.points.geometry.dispose();
@@ -158,6 +177,7 @@ export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTe
     t.base = base; t.target = target; t.territoryIndex = territoryIndex; t.proteinList = proteins;
     t.material.uniforms.uActiveTerritory.value = activeTerritory;
     t.material.uniforms.uTerritoryFocus.value = activeTerritory >= 0 ? 1 : 0;
+    t.threadKey = "";
   }, [proteins]);
 
   // Recolor in place on theme change (no geometry rebuild needed).
@@ -180,10 +200,24 @@ export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTe
     t.material.uniforms.uFogFar.value = table.fogFar;
     t.material.uniforms.uSize.value = table.size;
     t.material.uniforms.uTeal.value.set(table.teal);
+    t.material.uniforms.uGlow.value.set(table.glow);
     t.material.blending = table.additive ? THREE.AdditiveBlending : THREE.NormalBlending;
     t.material.needsUpdate = true;
-    t.marker.material.color.set(table.teal);
+    t.dishMaterial.uniforms.uTint.value.set(table.dishTint);
+    t.dishMaterial.uniforms.uRim.value.set(table.dishRim);
   }, [theme]);
+
+  // Selection/query highlight — recomputed whenever what's "primary" changes.
+  useEffect(() => {
+    const t = three.current;
+    if (!t) return;
+    const matchAttr = t.points.geometry.getAttribute("aMatch") as THREE.BufferAttribute | undefined;
+    if (!matchAttr) return;
+    const primary = new Set(scene.queryResultIds);
+    if (scene.selectedProteinId) primary.add(scene.selectedProteinId);
+    for (let index = 0; index < t.proteinList.length; index += 1) matchAttr.setX(index, primary.has(t.proteinList[index].id) ? 1 : 0);
+    matchAttr.needsUpdate = true;
+  }, [scene.selectedProteinId, scene.queryResultIds, proteins]);
 
   // Camera choreography — driven by the exact command the SceneController just applied.
   useEffect(() => {
@@ -204,49 +238,59 @@ export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTe
       const protein = t.proteinList.find((candidate) => candidate.id === scene.selectedProteinId);
       if (protein) {
         const point = new THREE.Vector3(...worldPosition(protein.position));
-        t.marker.position.copy(point); t.marker.visible = true;
+        t.dish.position.copy(point); t.dish.visible = true;
         cam.applyTarget({ target: point, r: 150, theta: cam.cam.theta, phi: 1.05 }, TWEEN_MS.selectProtein);
       }
     } else if (command === "INSPECT_STRUCTURE") {
       cam.captureLevel("protein");
-      t.marker.visible = false;
       cam.applyTarget({ target: cam.cam.target.clone(), r: 90, theta: cam.cam.theta + 0.5, phi: 1.02 }, TWEEN_MS.inspectStructure);
     } else if (command === "START_DESIGN") {
       cam.applyTarget({ target: cam.cam.target.clone(), r: 100, theta: cam.cam.theta + 0.4, phi: 1.0 }, TWEEN_MS.startDesign);
     } else if (command === "EXIT_DESIGN") {
       cam.restoreLevel("protein", TWEEN_MS.returnToGlance);
     } else if (command === "RETURN_ONE_LEVEL" || command === "NAV_TO_LEVEL") {
-      if (scene.mode === "glance") { t.marker.visible = true; cam.restoreLevel("protein", TWEEN_MS.returnToGlance); }
+      if (scene.mode === "glance") { t.dish.visible = true; cam.restoreLevel("protein", TWEEN_MS.returnToGlance); }
       else if (scene.mode === "territory" && scene.territoryId) {
-        t.marker.visible = false;
+        t.dish.visible = false;
         const index = territories.findIndex((territory) => territory.id === scene.territoryId);
         applyTerritoryLayout(t, index);
         if (!cam.restoreLevel("territory", TWEEN_MS.returnToTerritory)) {
           cam.applyTarget({ target: new THREE.Vector3(...territoryCenter(index)), r: 260, theta: cam.cam.theta, phi: 1.05 }, TWEEN_MS.returnToTerritory);
         }
       } else if (scene.mode === "universe") {
-        t.marker.visible = false;
+        t.dish.visible = false;
         applyTerritoryLayout(t, -1);
         cam.goHome(TWEEN_MS.returnToUniverseCamera);
         cam.clearLevels();
       }
     } else if (command === "RETURN_TO_UNIVERSE") {
-      t.marker.visible = false;
+      t.dish.visible = false;
       applyTerritoryLayout(t, -1);
       cam.goHome(TWEEN_MS.returnToUniverseCamera);
       cam.clearLevels();
     } else if (command === "QUERY_ATLAS") {
-      t.marker.visible = false;
-      const matches = new Set(scene.queryResultIds);
-      applyQueryLayout(t, matches);
-      if (matches.size) {
-        let sumX = 0, sumY = 0, sumZ = 0, matched = 0;
-        t.proteinList.forEach((protein, index) => { if (matches.has(protein.id)) { sumX += t.target[index * 3]; sumY += t.target[index * 3 + 1]; sumZ += t.target[index * 3 + 2]; matched += 1; } });
-        const center = matched ? new THREE.Vector3(sumX / matched, sumY / matched, sumZ / matched) : new THREE.Vector3();
-        cam.applyTarget({ target: center, r: 340, theta: 0.4, phi: 1.12 }, TWEEN_MS.queryMatch);
+      t.dish.visible = false;
+      const matches = scene.queryResultIds;
+      if (matches.length) {
+        let minX = Infinity, minY = Infinity, minZ = Infinity, maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+        let sumX = 0, sumY = 0, sumZ = 0, count = 0;
+        const matchSet = new Set(matches);
+        t.proteinList.forEach((protein, index) => {
+          if (!matchSet.has(protein.id)) return;
+          const x = t.base[index * 3], y = t.base[index * 3 + 1], z = t.base[index * 3 + 2];
+          sumX += x; sumY += y; sumZ += z; count += 1;
+          minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+          minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+          minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
+        });
+        if (count) {
+          const center = new THREE.Vector3(sumX / count, sumY / count, sumZ / count);
+          const span = Math.max(maxX - minX, maxY - minY, maxZ - minZ);
+          const r = THREE.MathUtils.clamp(span * 1.3 + 110, 160, 1500);
+          cam.applyTarget({ target: center, r, theta: cam.cam.theta, phi: cam.cam.phi }, TWEEN_MS.queryMatch);
+        }
       }
     } else if (command === "CLEAR_QUERY") {
-      applyQueryLayout(t, new Set());
       cam.applyTarget({ target: new THREE.Vector3(0, 0, 0), r: 900, theta: cam.cam.theta, phi: 1.12 }, TWEEN_MS.clearQuery);
     }
   }, [scene.lastCommand, scene.mode, scene.territoryId, scene.selectedProteinId, scene.queryResultIds]);
@@ -272,8 +316,8 @@ export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTe
       uniforms: {
         uSize: { value: table.size }, uPR: { value: renderer.getPixelRatio() },
         uFog: { value: new THREE.Color(table.fog) }, uFogNear: { value: table.fogNear }, uFogFar: { value: table.fogFar },
-        uTheme: { value: themeRef.current === "light" ? 0 : 1 }, uTeal: { value: new THREE.Color(table.teal) },
-        uDim: { value: 1 }, uDimNon: { value: 1 }, uActiveTerritory: { value: -1 }, uTerritoryFocus: { value: 0 },
+        uTheme: { value: themeRef.current === "light" ? 0 : 1 }, uTeal: { value: new THREE.Color(table.teal) }, uGlow: { value: new THREE.Color(table.glow) },
+        uDim: { value: 1 }, uDimNon: { value: 1 }, uActiveTerritory: { value: -1 }, uTerritoryFocus: { value: 0 }, uTime: { value: 0 },
       },
       vertexShader: pointVertexShader, fragmentShader: pointFragmentShader,
       transparent: true, depthWrite: false, blending: table.additive ? THREE.AdditiveBlending : THREE.NormalBlending,
@@ -281,9 +325,18 @@ export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTe
     const points = new THREE.Points(new THREE.BufferGeometry(), material);
     sceneObj.add(points);
 
-    const marker = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeBracketTexture(), color: table.teal, transparent: true, opacity: 0.85, depthTest: false }));
-    marker.visible = false;
-    sceneObj.add(marker);
+    const dishMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        uTint: { value: new THREE.Color(table.dishTint) }, uRim: { value: new THREE.Color(table.dishRim) },
+        uOpacity: { value: 0.85 }, uLightDir: { value: new THREE.Vector2(0.5, 0.7) }, uPulse: { value: 0 },
+      },
+      vertexShader: dishVertexShader, fragmentShader: dishFragmentShader,
+      transparent: true, depthWrite: false, depthTest: false, side: THREE.DoubleSide,
+    });
+    const dish = new THREE.Mesh(new THREE.CircleGeometry(1, 48), dishMaterial);
+    dish.visible = false;
+    dish.renderOrder = 10;
+    sceneObj.add(dish);
 
     const threadGroup = new THREE.Group();
     sceneObj.add(threadGroup);
@@ -291,10 +344,17 @@ export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTe
     const raycaster = new THREE.Raycaster();
     raycaster.params.Points = { threshold: 2.6 };
 
-    three.current = { renderer, sceneObj, camera, points, geometry: points.geometry, material, base: new Float32Array(0), target: new Float32Array(0), territoryIndex: new Int16Array(0), marker, raycaster, threadGroup, proteinList: [], threadKey: "" };
+    three.current = { renderer, sceneObj, camera, points, geometry: points.geometry, material, base: new Float32Array(0), target: new Float32Array(0), territoryIndex: new Int16Array(0), dish, dishMaterial, raycaster, threadGroup, proteinList: [], threadKey: "" };
 
     const pointer = new THREE.Vector2();
     let pointerDown = false; let panning = false; let moved = 0; let lastX = 0; let lastY = 0; let hoveredId: string | null = null; let moveThrottle = 0;
+    let overTerritoryLabel = false;
+
+    const overAnyTerritoryLabel = (clientX: number, clientY: number) => territoryLabelEls.current.some((el) => {
+      if (!el || el.style.display === "none") return false;
+      const rect = el.getBoundingClientRect();
+      return clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+    });
 
     const updatePointer = (event: PointerEvent) => {
       const rect = renderer.domElement.getBoundingClientRect();
@@ -306,7 +366,8 @@ export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTe
       return raycaster.ray.origin.clone().add(raycaster.ray.direction.clone().multiplyScalar(engine.current.now.r));
     };
     const pickProtein = (): AtlasProtein | null => {
-      if (sceneRef.current.mode !== "universe" && sceneRef.current.mode !== "territory") return null;
+      const mode = sceneRef.current.mode;
+      if (mode !== "universe" && mode !== "territory" && mode !== "glance") return null;
       raycaster.setFromCamera(pointer, camera);
       raycaster.params.Points!.threshold = Math.max(2.6, engine.current.now.r * 0.02);
       const hit = raycaster.intersectObject(points, false)[0];
@@ -329,6 +390,13 @@ export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTe
         lastX = event.clientX; lastY = event.clientY;
         return;
       }
+      // Territory labels win over protein-hover reveal when the cursor has to choose.
+      overTerritoryLabel = overAnyTerritoryLabel(event.clientX, event.clientY);
+      if (overTerritoryLabel) {
+        if (hoveredId !== null) { hoveredId = null; callbacks.current.onHoverProtein(null); }
+        renderer.domElement.style.cursor = "pointer";
+        return;
+      }
       moveThrottle += 1;
       if (moveThrottle % 2 !== 0) return;
       const protein = pickProtein();
@@ -343,12 +411,12 @@ export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTe
       pointerDown = false;
       renderer.domElement.releasePointerCapture(event.pointerId);
       if (moved > 6) return;
+      if (overAnyTerritoryLabel(event.clientX, event.clientY)) return;
       updatePointer(event);
       const protein = pickProtein();
       if (protein) { callbacks.current.onSelectProtein(protein); return; }
-      if (sceneRef.current.mode === "universe" || sceneRef.current.mode === "territory") {
-        // A click that hit neither a protein nor a territory label is a deliberate miss — stay put.
-      }
+      // A click that hit nothing while a protein is selected returns one level.
+      if (sceneRef.current.mode === "glance") callbacks.current.onDeselect();
     };
     const onDoubleClick = (event: MouseEvent) => {
       if (sceneRef.current.mode !== "universe" && sceneRef.current.mode !== "territory") return;
@@ -376,7 +444,7 @@ export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTe
     };
     window.addEventListener("resize", onResize);
 
-    let animationFrame = 0; let lastTime = performance.now(); let metricFrames = 0; let metricStart = performance.now(); let neighbourFrame = 0;
+    let animationFrame = 0; let lastTime = performance.now(); let metricFrames = 0; let metricStart = performance.now(); const startTime = performance.now();
     const render = () => {
       const now = performance.now();
       const dt = Math.min((now - lastTime) / 1000, 0.05);
@@ -386,10 +454,11 @@ export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTe
       const update = engine.current.update(dt, ambientEligible);
       camera.position.copy(update.position);
       camera.lookAt(update.target);
+      material.uniforms.uTime.value = (now - startTime) / 1000;
 
-      const targetDim = currentScene.mode === "inspect" || currentScene.mode === "design" ? 0.24 : currentScene.mode === "glance" ? 0.6 : 1;
+      const targetDim = currentScene.mode === "inspect" ? 0.24 : currentScene.mode === "design" ? 0.06 : currentScene.mode === "glance" ? 0.55 : 1;
       material.uniforms.uDim.value += (targetDim - material.uniforms.uDim.value) * 0.08;
-      const dimNonTarget = currentScene.queryResultIds.length || material.uniforms.uTerritoryFocus.value > 0.5 ? THEME_TABLE[themeRef.current].dimNon : 1;
+      const dimNonTarget = currentScene.queryResultIds.length || currentScene.selectedProteinId || material.uniforms.uTerritoryFocus.value > 0.5 ? THEME_TABLE[themeRef.current].dimNon : 1;
       material.uniforms.uDimNon.value += (dimNonTarget - material.uniforms.uDimNon.value) * 0.08;
 
       const t = three.current;
@@ -407,10 +476,13 @@ export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTe
           }
           if (changed) positionAttr.needsUpdate = true;
         }
-        if (t.marker.visible) {
-          const distance = camera.position.distanceTo(t.marker.position);
-          t.marker.scale.setScalar(distance * 0.09);
-          t.marker.material.opacity = 0.7 + Math.sin(now * 0.004) * 0.3;
+        if (t.dish.visible) {
+          const distance = camera.position.distanceTo(t.dish.position);
+          t.dish.scale.setScalar(distance * 0.12);
+          t.dish.quaternion.copy(camera.quaternion);
+          const theta = engine.current.now.theta;
+          t.dishMaterial.uniforms.uLightDir.value.set(Math.cos(theta * 0.6 + 0.8), Math.sin(theta * 0.6 + 0.8));
+          t.dishMaterial.uniforms.uPulse.value = 0.5 + 0.5 * Math.sin(now * 0.0021);
         }
 
         // Relationship threads: rebuild only when the selection/toggle actually changes.
@@ -422,19 +494,13 @@ export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTe
         }
         const threadTargetOpacity = showThreads ? 1 : 0;
         t.threadGroup.children.forEach((child) => {
-          const material2 = (child as THREE.Line | THREE.Mesh).material as THREE.Material & { opacity: number };
-          material2.opacity += (threadTargetOpacity * (material2.userData.baseOpacity ?? 1) - material2.opacity) * 0.15;
+          const lineMaterial = (child as THREE.Line).material as THREE.Material & { opacity: number };
+          lineMaterial.opacity += (threadTargetOpacity * (lineMaterial.userData.baseOpacity ?? 1) - lineMaterial.opacity) * 0.15;
         });
-
-        // Neighbourhood resolution: as the camera nears a territory, surface nearby protein labels.
-        neighbourFrame += 1;
-        if (neighbourFrame % 10 === 0) {
-          updateNeighbourLabels(t, currentScene, engine.current, neighbourLabelEls.current);
-        }
       }
 
       renderer.render(sceneObj, camera);
-      projectLabels(camera, mount, territoryLabelEls.current, currentScene, hoveredId, proteinsRef.current, hoverLabelEl.current, neighbourLabelEls.current);
+      projectLabels(camera, mount, territoryLabelEls.current, currentScene, overTerritoryLabel ? null : hoveredId, proteinsRef.current, hoverLabelEl.current);
 
       metricFrames += 1;
       if (now - metricStart >= 1000) {
@@ -456,8 +522,7 @@ export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTe
       renderer.domElement.removeEventListener("contextmenu", onContextMenu);
       points.geometry.dispose(); material.dispose();
       disposeThreadGroup(threadGroup);
-      (marker.material as THREE.SpriteMaterial).map?.dispose();
-      (marker.material as THREE.Material).dispose();
+      dish.geometry.dispose(); dishMaterial.dispose();
       renderer.dispose();
       three.current = null;
       if (renderer.domElement.parentElement === mount) mount.removeChild(renderer.domElement);
@@ -471,7 +536,7 @@ export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTe
       {territories.map((territory, index) => <div
         key={territory.id}
         ref={(el) => { if (el) territoryLabelEls.current[index] = el; }}
-        className="hx-label hx-label-territory"
+        className="hx-label hx-label-territory hx-glass"
         style={{ display: "none" }}
         onClick={() => onEnterTerritory(territory.id)}
       >
@@ -479,12 +544,6 @@ export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTe
         <div className="hx-label-name serif">{territory.label}</div>
         <div className="hx-label-enter mono">ENTER ›</div>
       </div>)}
-      {Array.from({ length: NEIGHBOUR_LABEL_POOL }).map((_, index) => (
-        <div key={index} ref={(el) => { if (el) neighbourLabelEls.current[index] = el; }} className="hx-label hx-label-hero hx-label-neighbour" style={{ display: "none" }}>
-          <div className="hx-label-hero-id mono" />
-          <div className="hx-label-hero-name serif" />
-        </div>
-      ))}
       <div ref={hoverLabelEl} className="hx-label hx-label-hero" style={{ display: "none" }}>
         <div className="hx-label-hero-id mono" />
         <div className="hx-label-hero-name serif" />
@@ -509,82 +568,38 @@ function applyTerritoryLayout(t: ThreeRefs, activeTerritory: number) {
   t.material.uniforms.uTerritoryFocus.value = activeTerritory >= 0 ? 1 : 0;
 }
 
-const QUERY_PULL = new THREE.Vector3(0, 30, 460);
-const QUERY_SPACING = 58;
-const QUERY_PER_ROW = 9;
-const QUERY_SHELL_RADIUS = 980;
-
-/**
- * Matches resolve onto a compact, individually legible grid right in front of
- * the query-framing camera; everything else is pushed onto a distant shell so
- * it reads as receded aggregate context, not a wall obscuring the results.
- */
-function applyQueryLayout(t: ThreeRefs, matches: Set<string>) {
-  const matchAttr = t.points.geometry.getAttribute("aMatch") as THREE.BufferAttribute | undefined;
-  if (matches.size === 0) {
-    for (let index = 0; index < t.proteinList.length; index += 1) {
-      if (matchAttr) matchAttr.setX(index, 0);
-      t.target[index * 3] = t.base[index * 3]; t.target[index * 3 + 1] = t.base[index * 3 + 1]; t.target[index * 3 + 2] = t.base[index * 3 + 2];
-    }
-    if (matchAttr) matchAttr.needsUpdate = true;
-    return;
-  }
-  const matchIndices: number[] = [];
-  for (let index = 0; index < t.proteinList.length; index += 1) {
-    const isMatch = matches.has(t.proteinList[index].id);
-    if (matchAttr) matchAttr.setX(index, isMatch ? 1 : 0);
-    if (isMatch) matchIndices.push(index);
-  }
-  const rows = Math.ceil(matchIndices.length / QUERY_PER_ROW);
-  matchIndices.forEach((index, order) => {
-    const row = Math.floor(order / QUERY_PER_ROW);
-    const col = order % QUERY_PER_ROW;
-    const rowCount = Math.min(QUERY_PER_ROW, matchIndices.length - row * QUERY_PER_ROW);
-    t.target[index * 3] = QUERY_PULL.x + (col - (rowCount - 1) / 2) * QUERY_SPACING;
-    t.target[index * 3 + 1] = QUERY_PULL.y + ((rows - 1) / 2 - row) * QUERY_SPACING;
-    t.target[index * 3 + 2] = QUERY_PULL.z;
-  });
-  for (let index = 0; index < t.proteinList.length; index += 1) {
-    if (matches.has(t.proteinList[index].id)) continue;
-    const bx = t.base[index * 3], by = t.base[index * 3 + 1], bz = t.base[index * 3 + 2];
-    const length = Math.hypot(bx, by, bz) || 1;
-    const shellScale = QUERY_SHELL_RADIUS / length;
-    t.target[index * 3] = bx * shellScale; t.target[index * 3 + 1] = by * shellScale; t.target[index * 3 + 2] = bz * shellScale;
-  }
-  if (matchAttr) matchAttr.needsUpdate = true;
-}
-
 function rebuildThreadGroup(t: ThreeRefs, selectedProteinId: string | null) {
   disposeThreadChildren(t.threadGroup);
-  if (!selectedProteinId) return;
+  const exemptAttr = t.points.geometry.getAttribute("aExempt") as THREE.BufferAttribute | undefined;
+  if (exemptAttr) { for (let i = 0; i < exemptAttr.count; i += 1) exemptAttr.setX(i, 0); }
+  if (!selectedProteinId) { if (exemptAttr) exemptAttr.needsUpdate = true; return; }
   const selected = t.proteinList.find((protein) => protein.id === selectedProteinId);
-  if (!selected) return;
-  const threads = computeRelationshipThreads(selected, t.proteinList, 3);
+  if (!selected) { if (exemptAttr) exemptAttr.needsUpdate = true; return; }
+  const threads = computeRelationshipThreads(selected, t.proteinList, THREAD_LIMIT);
   const from = new THREE.Vector3(...worldPosition(selected.position));
+  const relatedIds = new Set(threads.map((thread) => thread.protein.id));
+  if (exemptAttr) {
+    t.proteinList.forEach((protein, index) => { if (relatedIds.has(protein.id)) exemptAttr.setX(index, 1); });
+    exemptAttr.needsUpdate = true;
+  }
   threads.forEach((thread, index) => {
     const to = new THREE.Vector3(...worldPosition(thread.protein.position));
     const mid = from.clone().add(to).multiplyScalar(0.5);
     mid.y += 30 + index * 10;
     const curve = new THREE.QuadraticBezierCurve3(from, mid, to);
-    const colorHex = THREAD_COLOR[thread.type] ?? "#888888";
     const lineGeometry = new THREE.BufferGeometry().setFromPoints(curve.getPoints(48));
-    const lineMaterial = new THREE.LineBasicMaterial({ color: colorHex, transparent: true, opacity: 0 });
-    lineMaterial.userData.baseOpacity = 0.75;
+    const lineMaterial = new THREE.LineBasicMaterial({ color: "#0c8c78", transparent: true, opacity: 0 });
+    lineMaterial.userData.baseOpacity = 0.7;
     const line = new THREE.Line(lineGeometry, lineMaterial);
     t.threadGroup.add(line);
-    const dotMaterial = new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 0 });
-    dotMaterial.userData.baseOpacity = 1;
-    const dot = new THREE.Mesh(new THREE.SphereGeometry(3.2, 12, 12), dotMaterial);
-    dot.position.copy(to);
-    t.threadGroup.add(dot);
   });
 }
 
 function disposeThreadChildren(group: THREE.Group) {
   while (group.children.length) {
     const child = group.children.pop()!;
-    (child as THREE.Line | THREE.Mesh).geometry?.dispose();
-    ((child as THREE.Line | THREE.Mesh).material as THREE.Material)?.dispose();
+    (child as THREE.Line).geometry?.dispose();
+    ((child as THREE.Line).material as THREE.Material)?.dispose();
   }
 }
 
@@ -592,51 +607,18 @@ function disposeThreadGroup(group: THREE.Group) {
   disposeThreadChildren(group);
 }
 
-function updateNeighbourLabels(t: ThreeRefs, scene: SceneState, cameraEngine: CameraEngine, els: HTMLDivElement[]) {
-  if (scene.mode !== "territory" || cameraEngine.now.r > NEIGHBOUR_RADIUS * 2.4) {
-    els.forEach((el) => { el.style.display = "none"; });
-    return;
-  }
-  const activeTerritory = territories.findIndex((territory) => territory.id === scene.territoryId);
-  if (activeTerritory < 0) { els.forEach((el) => { el.style.display = "none"; }); return; }
-  const targetX = cameraEngine.now.target.x, targetY = cameraEngine.now.target.y, targetZ = cameraEngine.now.target.z;
-  const nearby: Array<{ index: number; distSq: number }> = [];
-  for (let index = 0; index < t.proteinList.length; index += 1) {
-    if (t.territoryIndex[index] !== activeTerritory) continue;
-    const dx = t.target[index * 3] - targetX, dy = t.target[index * 3 + 1] - targetY, dz = t.target[index * 3 + 2] - targetZ;
-    const distSq = dx * dx + dy * dy + dz * dz;
-    if (distSq < NEIGHBOUR_RADIUS * NEIGHBOUR_RADIUS) nearby.push({ index, distSq });
-  }
-  nearby.sort((a, b) => a.distSq - b.distSq);
-  const picked = nearby.slice(0, els.length);
-  els.forEach((el, slot) => {
-    const entry = picked[slot];
-    if (!entry) { el.style.display = "none"; return; }
-    const protein = t.proteinList[entry.index];
-    el.dataset.px = String(t.target[entry.index * 3]);
-    el.dataset.py = String(t.target[entry.index * 3 + 1]);
-    el.dataset.pz = String(t.target[entry.index * 3 + 2]);
-    const idEl = el.querySelector(".hx-label-hero-id"); if (idEl) idEl.textContent = protein.id;
-    const nameEl = el.querySelector(".hx-label-hero-name"); if (nameEl) nameEl.textContent = protein.name;
-    el.dataset.armed = "1";
-  });
-  for (let slot = picked.length; slot < els.length; slot += 1) els[slot].dataset.armed = "0";
-}
-
-function projectLabels(camera: THREE.PerspectiveCamera, mount: HTMLDivElement, territoryEls: HTMLDivElement[], scene: SceneState, hoveredId: string | null, proteins: AtlasProtein[], hoverLabel: HTMLDivElement | null, neighbourEls: HTMLDivElement[]) {
+function projectLabels(camera: THREE.PerspectiveCamera, mount: HTMLDivElement, territoryEls: HTMLDivElement[], scene: SceneState, hoveredId: string | null, proteins: AtlasProtein[], hoverLabel: HTMLDivElement | null) {
   const width = mount.clientWidth; const height = mount.clientHeight;
   const showTerritories = scene.mode === "universe" || scene.mode === "territory";
   const projected = new THREE.Vector3();
-  // The query bar is a fixed, always-present piece of UI chrome in this mode
-  // (top-centered, width min(660,66vw)). A territory label's screen position
-  // is driven by real 3D camera math and can, at some camera angles,
-  // genuinely coincide with it — nudge the label below the reserved zone
-  // rather than let it render invisibly underneath.
-  const queryZoneWidth = Math.min(660, width * 0.66);
-  const queryZoneLeft = (width - queryZoneWidth) / 2;
-  const queryZoneRight = width - queryZoneLeft;
-  const queryZoneTop = 64;
-  const queryZoneBottom = 230;
+  // The query bar (top:78px, right:26px, width min(660, 66vw), plus its results/suggestions
+  // row) sits above the world and is itself interactive — a territory label projected under
+  // it would lose the click to the query bar's own buttons/chips. Nudge below instead of
+  // fighting a z-order battle between two legitimately-interactive elements.
+  const queryRight = width - 26;
+  const queryLeft = queryRight - Math.min(660, width * 0.66);
+  const queryTop = 78; const queryBottom = 230;
+  const labelHalfW = 105; const labelHalfH = 40;
   territories.forEach((territory, index) => {
     const el = territoryEls[index];
     if (!el) return;
@@ -646,7 +628,8 @@ function projectLabels(camera: THREE.PerspectiveCamera, mount: HTMLDivElement, t
     if (showTerritories && onscreen) {
       const left = (projected.x * 0.5 + 0.5) * width;
       let top = (-projected.y * 0.5 + 0.5) * height;
-      if (top > queryZoneTop && top < queryZoneBottom && left > queryZoneLeft && left < queryZoneRight) top = queryZoneBottom + 26;
+      const overlapsQuery = left + labelHalfW > queryLeft && left - labelHalfW < queryRight && top + labelHalfH > queryTop && top - labelHalfH < queryBottom;
+      if (overlapsQuery) top = queryBottom + labelHalfH + 12;
       el.style.left = `${left}px`;
       el.style.top = `${top}px`;
       el.style.display = "block";
@@ -655,17 +638,9 @@ function projectLabels(camera: THREE.PerspectiveCamera, mount: HTMLDivElement, t
       el.style.display = "none";
     }
   });
-  neighbourEls.forEach((el) => {
-    if (el.dataset.armed !== "1") { el.style.display = "none"; return; }
-    projected.set(Number(el.dataset.px), Number(el.dataset.py), Number(el.dataset.pz)).project(camera);
-    if (projected.z >= 1 || Math.abs(projected.x) > 1.05 || Math.abs(projected.y) > 1.05) { el.style.display = "none"; return; }
-    el.style.left = `${(projected.x * 0.5 + 0.5) * width}px`;
-    el.style.top = `${(-projected.y * 0.5 + 0.5) * height}px`;
-    el.style.display = "block";
-  });
   if (hoverLabel) {
     const protein = hoveredId ? proteins.find((candidate) => candidate.id === hoveredId) ?? null : null;
-    if (protein && (scene.mode === "universe" || scene.mode === "territory")) {
+    if (protein && (scene.mode === "universe" || scene.mode === "territory" || scene.mode === "glance")) {
       projected.set(...worldPosition(protein.position)).project(camera);
       if (projected.z < 1) {
         hoverLabel.style.left = `${(projected.x * 0.5 + 0.5) * width}px`;

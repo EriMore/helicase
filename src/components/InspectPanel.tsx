@@ -26,9 +26,11 @@ type InspectPanelProps = {
   onOpenSequence: () => void;
   canDesign: boolean;
   onStartDesign: () => void;
+  autoRotate: boolean;
+  onToggleAutoRotate: () => void;
 };
 
-export function InspectPanel({ protein, representation, onSetRepresentation, colorMode, onSetColorMode, ligandsVisible, onToggleLigands, confidenceXray, onToggleConfidenceXray, confidence, structureMetadata, seqOpen, onOpenSequence, canDesign, onStartDesign }: InspectPanelProps) {
+export function InspectPanel({ protein, representation, onSetRepresentation, colorMode, onSetColorMode, ligandsVisible, onToggleLigands, confidenceXray, onToggleConfidenceXray, confidence, structureMetadata, seqOpen, onOpenSequence, canDesign, onStartDesign, autoRotate, onToggleAutoRotate }: InspectPanelProps) {
   const predicted = protein.structure.kind === "predicted";
   const confLabel = predicted
     ? confidence.status === "available" ? `Confidence X-ray · mean pLDDT ${confidence.data.mean.toFixed(1)}` : confidence.status === "loading" ? "Resolving AlphaFold confidence…" : confidence.status === "failed" ? confidence.error : "Confidence unavailable"
@@ -71,6 +73,7 @@ export function InspectPanel({ protein, representation, onSetRepresentation, col
         <div className="hx-chip-row" style={{ marginTop: 8 }}>
           <button className={`hx-chip mono ${ligandsVisible ? "active" : ""}`} onClick={onToggleLigands}>LIGANDS {ligandsVisible ? "●" : "○"}</button>
           <button className="hx-chip mono" onClick={() => onSetColorMode(colorMode === "chain" ? "domain" : "chain")}>COLOR · {colorMode.toUpperCase()}</button>
+          <button className={`hx-chip mono ${autoRotate ? "active" : ""}`} onClick={onToggleAutoRotate} title="Slow camera-orbit spin — not a molecular-dynamics simulation">ROTATE {autoRotate ? "●" : "○"}</button>
         </div>
       </div>
 

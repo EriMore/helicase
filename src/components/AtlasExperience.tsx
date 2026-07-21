@@ -41,13 +41,13 @@ export function AtlasExperience() {
   const [query, setQuery] = useState("");
   const [queryResults, setQueryResults] = useState<AtlasSearchResult[]>([]);
   const [worldMetrics, setWorldMetrics] = useState<WorldMetrics>({ fps: 0, visibleCount: 0 });
-  const [hintSeen, setHintSeen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const [command, setCommand] = useState("");
   const [answer, setAnswer] = useState<AtlasAnswer | null>(null);
   const [copilotBusy, setCopilotBusy] = useState(false);
   const [commandError, setCommandError] = useState<string | null>(null);
   const [structureStatus, setStructureStatus] = useState<"loading" | "ready" | "unavailable">("loading");
+  const [autoRotate, setAutoRotate] = useState(false);
   const copilotRequest = useRef<AbortController | null>(null);
   const answerTimer = useRef<number | null>(null);
   const designProgressRef = useRef(0);
@@ -99,7 +99,8 @@ export function AtlasExperience() {
   const navigateLevel = useCallback((level: "universe" | "territory" | "protein" | "structure") => { issue({ type: "NAV_TO_LEVEL", level }); sound.play("back"); }, [issue, sound]);
   const returnHome = useCallback(() => { issue({ type: "RETURN_TO_UNIVERSE" }); clearQuery(); sound.play("back"); }, [issue, clearQuery, sound]);
   const inspectStructure = useCallback(() => { issue({ type: "INSPECT_STRUCTURE" }); sound.play("enter"); }, [issue, sound]);
-  const startDesign = useCallback(() => { issue({ type: "START_DESIGN", trajectoryId: "proteinmpnn-6ehb-example-6", specification: "Official precomputed 6EHB sequence redesign" }); sound.play("enter"); }, [issue, sound]);
+  const startDesign = useCallback(() => { issue({ type: "START_DESIGN", trajectoryId: "proteinmpnn-6ehb-example-6", specification: "Redesign the sequence of the 6EHB outer-membrane-protein-U homotrimer with ProteinMPNN, tying equivalent positions across chains A, B, and C at sampling temperature 0.2." }); sound.play("enter"); }, [issue, sound]);
+  const returnOneLevel = useCallback(() => { issue({ type: "RETURN_ONE_LEVEL" }); sound.play("back"); }, [issue, sound]);
 
   // ---- global keyboard: Esc returns one level / closes overlays, Cmd+K summons Ask Atlas ----
   useEffect(() => {
@@ -281,8 +282,9 @@ export function AtlasExperience() {
         proteins={atlas.records}
         onSelectProtein={onSelectProteinFromWorld}
         onEnterTerritory={enterTerritory}
-        onHoverProtein={() => { if (!hintSeen) setHintSeen(true); }}
+        onHoverProtein={() => {}}
         onMetrics={setWorldMetrics}
+        onDeselect={returnOneLevel}
       />
 
       {(state.mode === "inspect" || state.mode === "design") && selectedProtein && (
@@ -298,6 +300,8 @@ export function AtlasExperience() {
           retryKey={state.structureRetry}
           onStatusChange={setStructureStatus}
           onResiduePick={(residueNumber) => issue({ type: "SET_SEQUENCE_SELECTION", selection: { start: residueNumber - 1, end: residueNumber - 1 } })}
+          theme={theme}
+          autoRotate={autoRotate || state.mode === "design"}
         />
       )}
 
@@ -305,7 +309,7 @@ export function AtlasExperience() {
       <div className="hx-scrim-bot" />
       <div className="hx-vignette" />
 
-      <Header theme={theme} releaseLabel={releaseLabel} soundOn={sound.enabled} onToggleSound={sound.toggle} ambientOn={sound.ambientOn} onToggleAmbient={sound.toggleAmbient} onToggleTheme={toggleTheme} onHome={returnHome} />
+      <Header theme={theme} releaseLabel={releaseLabel} soundOn={sound.enabled} onToggleSound={sound.toggle} ambientOn={sound.ambientOn} onToggleAmbient={sound.toggleAmbient} onToggleTheme={toggleTheme} onHome={returnHome} showBack={state.mode !== "universe"} onBack={returnOneLevel} />
       <DepthRail
         mode={state.mode}
         visible={!loaderVisible}
@@ -326,7 +330,7 @@ export function AtlasExperience() {
         filterLabel={dominantTerritoryLabel}
       />
 
-      {state.mode === "glance" && selectedProtein && (
+      {(state.mode === "glance" || state.mode === "inspect") && selectedProtein && (
         <IdentityPanel
           protein={selectedProtein}
           detail={detail}
@@ -336,11 +340,12 @@ export function AtlasExperience() {
           onToggleThreads={() => { issue({ type: "TOGGLE_THREADS" }); sound.play("tick"); }}
           relatedPool={atlas.records}
           onSelectRelated={selectProtein}
-          showInspectButton
+          showInspectButton={state.mode === "glance"}
           onInspect={inspectStructure}
           onOpenSequence={() => issue({ type: state.seqOpen ? "CLOSE_SEQUENCE" : "OPEN_SEQUENCE" })}
           canDesign={canDesign}
           onStartDesign={startDesign}
+          onClose={returnOneLevel}
         />
       )}
 
@@ -361,6 +366,8 @@ export function AtlasExperience() {
           onOpenSequence={() => issue({ type: state.seqOpen ? "CLOSE_SEQUENCE" : "OPEN_SEQUENCE" })}
           canDesign={canDesign}
           onStartDesign={startDesign}
+          autoRotate={autoRotate}
+          onToggleAutoRotate={() => setAutoRotate((current) => !current)}
         />
       )}
       {state.mode === "inspect" && structureStatus === "unavailable" && (
@@ -394,7 +401,7 @@ export function AtlasExperience() {
       <AskAtlas
         visible={showAskAtlas}
         navHint={navHint}
-        hintVisible={!hintSeen}
+        hintVisible
         commandOpen={commandOpen}
         onOpenCommand={() => setCommandOpen(true)}
         onCloseCommand={() => setCommandOpen(false)}

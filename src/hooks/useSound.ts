@@ -8,7 +8,7 @@ const AMBIENT_STORAGE_KEY = "helicase.ambient";
 const FREQUENCIES: Record<SoundCue, number> = { select: 520, enter: 340, query: 440, back: 300, tick: 660, deny: 180 };
 
 function readStored(key: string): boolean {
-  return typeof window !== "undefined" && window.localStorage.getItem(key) === "on";
+  return window.localStorage.getItem(key) === "on";
 }
 
 /**
@@ -19,10 +19,22 @@ function readStored(key: string): boolean {
  * docs/handoff/DESIGN_DELTA.md.
  */
 export function useSound() {
-  const [enabled, setEnabled] = useState(() => readStored(CUE_STORAGE_KEY));
-  const [ambientOn, setAmbientOn] = useState(() => readStored(AMBIENT_STORAGE_KEY));
+  // Both start false (the SSR-safe default) so server and hydration-pass
+  // markup match exactly; a mount effect below syncs from localStorage
+  // immediately after — sound has no FOUC equivalent, so a same-tick
+  // post-mount correction is imperceptible, unlike the theme flash risk.
+  const [enabled, setEnabled] = useState(false);
+  const [ambientOn, setAmbientOn] = useState(false);
   const context = useRef<AudioContext | null>(null);
   const ambientNodes = useRef<{ oscillators: OscillatorNode[]; gain: GainNode; lfo: OscillatorNode } | null>(null);
+
+  useEffect(() => {
+    // One-time correction from localStorage into React state on mount, matching the
+    // SSR-safe pattern in useTheme — not a cascading re-render risk.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (readStored(CUE_STORAGE_KEY)) setEnabled(true);
+    if (readStored(AMBIENT_STORAGE_KEY)) setAmbientOn(true);
+  }, []);
 
   const ensureContext = useCallback(() => {
     if (context.current) return context.current;

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, Spectral } from "next/font/google";
+import Script from "next/script";
 import "molstar/build/viewer/molstar.css";
 import "./globals.css";
 
@@ -24,19 +25,15 @@ export const metadata: Metadata = {
   icons: { icon: "/brand/logo/icon_white_svg.svg" },
 };
 
+const themeInitScript = "try{var t=localStorage.getItem('helicase.theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){}";
+
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className={`${spectral.variable} ${plexMono.variable}`} suppressHydrationWarning>
-      <head>
-        <script
-          // Read the persisted theme before first paint to avoid a flash of the default theme.
-          dangerouslySetInnerHTML={{
-            __html:
-              "try{var t=localStorage.getItem('helicase.theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){}",
-          }}
-        />
-      </head>
-      <body>{children}</body>
+      <body>
+        <Script id="theme-init" strategy="beforeInteractive">{themeInitScript}</Script>
+        {children}
+      </body>
     </html>
   );
 }
