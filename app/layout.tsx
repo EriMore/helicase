@@ -30,7 +30,7 @@ const themeInitScript = "try{var t=localStorage.getItem('helicase.theme');docume
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className={`${spectral.variable} ${plexMono.variable}`} suppressHydrationWarning>
-      <body>
+      <body suppressHydrationWarning>
         <Script id="theme-init" strategy="beforeInteractive">{themeInitScript}</Script>
         {children}
       </body>

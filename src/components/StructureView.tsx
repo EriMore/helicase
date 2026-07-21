@@ -38,6 +38,7 @@ const REPRESENTATION_PARAMS: Record<Exclude<StructureRepresentation, "cartoon">,
 
 export function StructureView({ active, structure: structureReference, confidenceActive = false, representation = "cartoon", colorMode = "chain", domains = [], showLigands = true, focusRange = null, retryKey = 0, onStatusChange, onResiduePick, theme = "light", autoRotate = false }: StructureViewProps) {
   const host = useRef<HTMLDivElement>(null);
+  const viewRef = useRef<HTMLDivElement>(null);
   const pluginRef = useRef<Awaited<ReturnType<typeof createPluginUI>> | null>(null);
   const structureDataRef = useRef<Structure | null>(null);
   const structureCellRef = useRef<StateObjectSelector | null>(null);
@@ -264,6 +265,37 @@ export function StructureView({ active, structure: structureReference, confidenc
     });
   }, [active, theme, autoRotate, status]);
 
+  // Centre the molecular viewport in the real usable gap between the identity panel and
+  // whatever right-side panel is mounted (Inspect or Design) — measured fresh from the DOM
+  // (like WorldCanvas's protein-selection framing) rather than assumed from fixed CSS
+  // widths, so it stays correct across viewport sizes, resizes, and panel changes. Mol*'s
+  // own camera reset then centres the model within this corrected box.
+  useEffect(() => {
+    if (!active) return;
+    const el = viewRef.current;
+    if (!el) return;
+    const update = () => {
+      const identityEl = document.querySelector(".hx-identity");
+      const rightPanelEl = document.querySelector(".hx-inspect, .hx-design");
+      const leftPx = identityEl ? identityEl.getBoundingClientRect().right : 26;
+      const rightPx = rightPanelEl ? window.innerWidth - rightPanelEl.getBoundingClientRect().left : 26;
+      if (el.style.left !== `${leftPx}px` || el.style.right !== `${rightPx}px`) {
+        el.style.left = `${leftPx}px`;
+        el.style.right = `${rightPx}px`;
+        const plugin = pluginRef.current;
+        plugin?.canvas3d?.requestResize();
+        plugin?.canvas3d?.requestCameraReset({ durationMs: 0 });
+      }
+    };
+    update();
+    window.addEventListener("resize", update);
+    // Cheap poll to catch the identity/inspect panel mounting, changing tabs, or resizing
+    // from something other than a window resize (e.g. a responsive width recalculation) —
+    // two getBoundingClientRect() calls, only while a structure view is actually mounted.
+    const interval = window.setInterval(update, 250);
+    return () => { window.removeEventListener("resize", update); window.clearInterval(interval); };
+  }, [active, status]);
+
   useEffect(() => {
     const plugin = pluginRef.current; const structure = structureDataRef.current;
     if (!active || !plugin || !structure || !focusRange) return;
@@ -280,7 +312,7 @@ export function StructureView({ active, structure: structureReference, confidenc
   }, [active, focusRange]);
 
   if (!active || !structureReference) return null;
-  return <div className="structure-view" aria-label={`Molecular view for ${structureReference.accession}`}>
+  return <div className="structure-view" ref={viewRef} aria-label={`Molecular view for ${structureReference.accession}`}>
     <div className="structure-canvas" ref={host} />
     <p className={`structure-status ${status}`}>{status === "ready" ? `${structureReference.source} ${structureReference.accession} · Mol*` : status === "loading" ? "Resolving cited coordinates…" : "Structure service unavailable · universe remains navigable"}</p>
   </div>;

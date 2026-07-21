@@ -360,7 +360,12 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
 /* ---------------------------------------------------------
    Structure viewport (Mol*)
    --------------------------------------------------------- */
-.structure-view { position: absolute; z-index: 2; inset: 88px min(320px, 30vw) 26px 201px; pointer-events: none; overflow: visible; }
+/* left/right are corrected in JS from the identity panel's and any right-side panel's real
+   measured DOM bounds (StructureView.tsx) so the model centres in the true visible gap
+   between them, not merely inset by the left panel's start position; these are only the
+   pre-JS-correction defaults (a same-ballpark approximation of the identity panel's right
+   edge and the inspect panel's reserved width) so there's no visible jump on mount. */
+.structure-view { position: absolute; z-index: 2; top: 88px; right: min(320px, 30vw); bottom: 26px; left: 581px; pointer-events: none; overflow: visible; }
 .structure-canvas, .structure-molstar-root { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; pointer-events: auto; }
 .structure-canvas { background: radial-gradient(circle at 52% 46%, rgba(120, 216, 255, .05), rgba(0, 0, 0, 0) 62%); }
 .structure-canvas .msp-plugin, .structure-canvas .msp-layout-standard, .structure-canvas .msp-layout-main, .structure-canvas .msp-viewport { background-color: transparent !important; background-image: none !important; border: 0 !important; }

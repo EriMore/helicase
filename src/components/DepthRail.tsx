@@ -35,7 +35,12 @@ export function DepthRail({ mode, visible, territoryLabel, proteinName, structur
         const active = index === depth;
         const reachable = index < depth;
         const sub = level.key === "territory" ? territoryLabel : level.key === "protein" ? proteinName : level.key === "structure" ? structureLabel : null;
-        const clickable = reachable || active;
+        // STRUCTURE is also a forward affordance, not just a "return to a shallower level"
+        // entry: once a protein is selected (Glance), its structure is always one click
+        // away — the rail should not require going through the identity panel's own
+        // "INSPECT STRUCTURE" button first.
+        const canAdvanceToStructure = level.key === "structure" && mode === "glance" && structureLabel != null;
+        const clickable = reachable || active || canAdvanceToStructure;
         return (
           <button
             key={level.key}
@@ -45,10 +50,10 @@ export function DepthRail({ mode, visible, territoryLabel, proteinName, structur
             onClick={() => { if (clickable) onNavigate(level.key); }}
           >
             <span className="hx-rail-dotwrap">
-              <span className="hx-rail-dot" style={{ background: active ? "var(--teal)" : reachable ? "var(--ink-soft)" : "transparent", borderColor: active ? "var(--teal)" : "var(--glass-brd)" }} />
+              <span className="hx-rail-dot" style={{ background: active ? "var(--teal)" : reachable ? "var(--ink-soft)" : "transparent", borderColor: active || canAdvanceToStructure ? "var(--teal)" : "var(--glass-brd)" }} />
             </span>
             <span className="hx-rail-textwrap">
-              <span className="hx-rail-label mono" style={{ color: active ? "var(--ink)" : reachable ? "var(--ink-soft)" : "var(--ink-faint)" }}>{level.label}</span>
+              <span className="hx-rail-label mono" style={{ color: active ? "var(--ink)" : reachable || canAdvanceToStructure ? "var(--ink-soft)" : "var(--ink-faint)" }}>{level.label}</span>
               {sub && <span className="hx-rail-sub">{sub}</span>}
             </span>
           </button>
