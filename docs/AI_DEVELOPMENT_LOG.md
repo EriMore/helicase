@@ -1,5 +1,45 @@
 ---
 
+## 2026-07-21T01:20:00+00:00 - Claude Design realized on the production engine (spatial hierarchy, all design-package components)
+
+**Phase:** Implementation
+
+**Objective**
+Make the exported Claude Design (`prototypes/claude-design-final/`, `docs/design/final/`) unmistakably real on top of the existing production engine (575,503-protein reviewed corpus, Mol*, SceneController, GPT-5.6 copilot), per `docs/handoff/CLAUDE_TAKEOVER_AUDIT.md`'s roadmap.
+
+**Completed**
+- Landed the full `DESIGN_TOKENS.md` token set as CSS custom properties (light flagship + dark "Specimen Chamber"), self-hosted Spectral + IBM Plex Mono via `next/font/google`, theme persistence, and the shared `.hx-glass` panel/scrim primitives. Fixed the pre-existing `eslint.config.mjs` gap that was linting the vendored `prototypes/**` reference bundle. Added a CI workflow gating PRs against `main`/`integration/claude-handoff`.
+- Rewrote the camera engine (`src/engine/camera-navigation.ts`) to the exact spherical `{target,r,theta,phi}` contract in `MOTION_AND_CAMERA_SPEC.md`: FOV 46°, `r` clamped [40,1700], `phi` clamped [0.14,3.0], a single `easeInOutCubic` curve, the full per-transition duration table, and an exact per-depth-level snapshot/restore stack.
+- Expanded `SceneMode`/`SceneCommand`/`SceneState` (`src/domain/atlas.ts`) to the design's 5-level hierarchy (`universe|territory|glance|inspect|design`), with `NAV_TO_LEVEL`/`RETURN_ONE_LEVEL` reproducing the prototype's exact per-level return rules. Rebuilt the copilot tool surface to 9 tools 1:1 with the new commands (`src/domain/copilot-tools.ts`).
+- Added `src/domain/territories.ts` (6 design-facing territories grouping the real 12-region annotation taxonomy, two regions per territory) so the universe ships the design's 6-hue palette without discarding real classification resolution.
+- Rewrote `WorldCanvas.tsx`: real 75,000-protein point field (no synthetic aggregate layer), territory ×1.7 expansion, `dimNon` dimming, idle-gated ambient drift, double-click focus, canvas-drawn bracket-marker selection, and camera choreography driven directly off `SceneState.lastCommand`.
+- Built every component in `docs/design/final/COMPONENT_INVENTORY.md`: `Header`, `DepthRail`, `QueryBar`, `IdentityPanel` (Glance/Learn tabs + relationship threads), `InspectPanel`, `DesignPanel`, `SequenceTray`, `AskAtlas` (⌘K-summonable, visible action trace, auto-dismiss), `LoadingScreen` (static logo, no spin).
+- Added `app/api/atlas/protein` + `useProteinDetail`: a real per-protein UniProt fetch (gene, function, subcellular location, disease, domains, canonical sequence) used by Glance/Learn/Sequence — fetched only for the selected protein, keeping the bulk 75k profile on its existing light field set.
+- Added `src/domain/relationships.ts`: relationship threads computed from real signals only (shared UniProt family annotation, or this codebase's own region classification), never an invented edge, with unit tests.
+- Extended `StructureView.tsx`: Spacefill representation, real chain-id/UniProt-domain-range color modes, and a Mol* click→sequence residue bridge (`plugin.behaviors.interaction.click`) for genuine bidirectional structure/sequence selection.
+- Implemented the protein-design journey as a continuous, six-beat, real-time spatial timeline (play/pause/scrub) rather than the design package's discrete stage clicks, per explicit instruction for this pass; beats without a real artifact (backbone generation, predicted fold/metrics) render as honest evidence gates.
+- Added a sound system (`src/hooks/useSound.ts`) matching `SOUND_SPEC.md`'s cue table/envelope, persisted, off by default.
+- Removed the Codex-era cold-open landing screen and its dead fixture module (`src/domain/fixtures.ts`) — the design has no such screen.
+- Found and fixed two real bugs via a Playwright smoke pass against the production build: an undeclared `color` attribute in the point-field vertex shader, and a text-selection regression from drag-orbiting over UI chrome.
+
+**Validation**
+- `npm run typecheck`, `npm run lint`, `npm test` (26 tests / 4 files), `npm run build` — all pass.
+- Playwright smoke pass against `npm run start`: Universe renders the real point field in both themes; simulated territory-label click verified expansion/dim/camera-reframe/rail-update; theme toggle verified; zero browser console errors after the shader fix.
+- Full detail, known gaps, and the exact next task are in `docs/handoff/CURRENT_STATE.md`. Deliberate deviations from the design package are recorded in `docs/handoff/DESIGN_DELTA.md`.
+
+**Git**
+- Branch: `claude/final-implementation` (from `integration/claude-handoff`).
+- Commits: `91ddef3` (design-token foundation), `f63ed85` (spatial hierarchy + all design-package components).
+- PR: #11, draft, targeting `integration/claude-handoff`.
+
+**Codex**
+- Session ID: Pending (/feedback)
+
+**Next**
+Playwright E2E suite for the core navigation loop, screenshot-based visual regression tests, multi-breakpoint manual QA, re-verify `docs/handoff/FINAL_ACCEPTANCE_MATRIX.md` row-by-row against the shipped build, and a credentialed Ask Atlas smoke test if `OPENAI_API_KEY` is available.
+
+---
+
 ## 2026-07-20T05:40:00+01:00 - Functional-completion closeout
 
 **Phase:** Validation and publication
