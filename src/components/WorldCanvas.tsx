@@ -627,6 +627,16 @@ function projectLabels(camera: THREE.PerspectiveCamera, mount: HTMLDivElement, t
   const width = mount.clientWidth; const height = mount.clientHeight;
   const showTerritories = scene.mode === "universe" || scene.mode === "territory";
   const projected = new THREE.Vector3();
+  // The query bar is a fixed, always-present piece of UI chrome in this mode
+  // (top-centered, width min(660,66vw)). A territory label's screen position
+  // is driven by real 3D camera math and can, at some camera angles,
+  // genuinely coincide with it — nudge the label below the reserved zone
+  // rather than let it render invisibly underneath.
+  const queryZoneWidth = Math.min(660, width * 0.66);
+  const queryZoneLeft = (width - queryZoneWidth) / 2;
+  const queryZoneRight = width - queryZoneLeft;
+  const queryZoneTop = 64;
+  const queryZoneBottom = 230;
   territories.forEach((territory, index) => {
     const el = territoryEls[index];
     if (!el) return;
@@ -634,8 +644,11 @@ function projectLabels(camera: THREE.PerspectiveCamera, mount: HTMLDivElement, t
     projected.set(center[0], center[1] + (scene.territoryId === territory.id ? center[1] * 0.7 : 0), center[2]).project(camera);
     const onscreen = projected.z < 1 && Math.abs(projected.x) < 1.05 && Math.abs(projected.y) < 1.05;
     if (showTerritories && onscreen) {
-      el.style.left = `${(projected.x * 0.5 + 0.5) * width}px`;
-      el.style.top = `${(-projected.y * 0.5 + 0.5) * height}px`;
+      const left = (projected.x * 0.5 + 0.5) * width;
+      let top = (-projected.y * 0.5 + 0.5) * height;
+      if (top > queryZoneTop && top < queryZoneBottom && left > queryZoneLeft && left < queryZoneRight) top = queryZoneBottom + 26;
+      el.style.left = `${left}px`;
+      el.style.top = `${top}px`;
       el.style.display = "block";
       el.style.opacity = scene.mode === "territory" ? (scene.territoryId === territory.id ? "1" : "0.12") : "1";
     } else {
