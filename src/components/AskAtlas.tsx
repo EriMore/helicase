@@ -47,7 +47,7 @@ export function AskAtlas({ visible, navHint, hintVisible, commandOpen, onOpenCom
         </div>
       )}
 
-      <div className="hx-ask-entry">
+      <div className="hx-ask-entry" style={{ display: commandOpen ? "none" : undefined }}>
         <div className="hx-ask-hint mono" style={{ opacity: hintVisible ? 1 : 0 }}>{navHint}</div>
         <button className="hx-ask-button hx-glass" onClick={onOpenCommand}>
           <span className="hx-status-dot" style={{ background: "var(--teal)" }} />

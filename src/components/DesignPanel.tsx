@@ -134,7 +134,7 @@ export function DesignPanel({ proteinName, trajectory, design, onPlayPause, onSe
       <div className="hx-design-provenance">Precomputed trajectory · not live computation. Real official ProteinMPNN output for UniProt A5F934 / PDB 6EHB. No experimental validation exists for this journey.</div>
       <div className="hx-design-controls">
         <button className="hx-btn-secondary mono" onClick={() => onSeek(Math.max(0, beat.range[0] - 0.16))}>← BACK</button>
-        <button className="hx-design-controls-primary hx-btn-primary-teal mono" onClick={design.progress >= 1 ? onExit : onPlayPause}>{design.progress >= 1 ? "FINISH" : design.playback === "playing" ? "PAUSE" : "PLAY"}</button>
+        <button className="hx-btn-primary-teal mono" onClick={design.progress >= 1 ? onExit : onPlayPause}>{design.progress >= 1 ? "FINISH" : design.playback === "playing" ? "PAUSE" : "PLAY"}</button>
       </div>
     </div>
   );

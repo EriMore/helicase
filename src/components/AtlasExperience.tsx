@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { type FormEvent, useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { initialSceneState, reduceScene, type SceneCommand } from "@/domain/atlas";
 import { copilotStreamEventSchema, sceneCommandSchema } from "@/domain/schemas";
 import { parseCopilotToolCall, type CopilotToolCall } from "@/domain/copilot-tools";
@@ -261,11 +261,10 @@ export function AtlasExperience() {
   const territoryLabel = state.territoryId ? territories.find((t) => t.id === state.territoryId)?.label ?? null : null;
   const canDesign = !!selectedProtein && selectedProtein.id === "A5F934";
   const structureDomains = detail.status === "available" ? detail.data.domains.map((domain, index) => ({ label: domain.label, start: domain.start, end: domain.end, color: domainColorHex(index) })) : [];
-  const showAskButton = !loaderVisible && !commandOpen;
+  const showAskAtlas = !loaderVisible;
   const navHint = state.mode === "universe" ? "DRAG ORBIT · RIGHT/SHIFT-DRAG PAN · SCROLL ZOOM · DOUBLE-CLICK FOCUS" : "ESC RETURNS ONE LEVEL";
 
   const onSelectProteinFromWorld = useCallback((protein: AtlasProtein) => { selectProtein(protein); }, [selectProtein]);
-  const submitQuery = (event: FormEvent) => { event.preventDefault(); void runQuery(query); };
 
   return (
     <main className="hx-app">
@@ -319,8 +318,6 @@ export function AtlasExperience() {
         resultCount={queryResults.length || null}
         filterLabel={dominantTerritoryLabel}
       />
-      {/* Keep native form submission working for screen readers / Enter key without JS focus tricks */}
-      <form onSubmit={submitQuery} className="hx-sr-only" aria-hidden />
 
       {state.mode === "glance" && selectedProtein && (
         <IdentityPanel
@@ -388,7 +385,7 @@ export function AtlasExperience() {
       )}
 
       <AskAtlas
-        visible={showAskButton}
+        visible={showAskAtlas}
         navHint={navHint}
         hintVisible={!hintSeen}
         commandOpen={commandOpen}
