@@ -36,7 +36,7 @@ const encode = (event: CopilotEvent) => `${JSON.stringify(event)}\n`;
 function fallback(message: string, proteinId: string | undefined): { text: string; calls: CopilotToolCall[] } {
   const calls: CopilotToolCall[] = [];
   if (/back|return|universe|zoom out/i.test(message)) calls.push({ name: "return_to_universe", arguments: {} });
-  else if (/design|redesign|candidate/i.test(message) && proteinId === "A5F934") calls.push({ name: "start_design", arguments: { trajectory_id: "proteinmpnn-6ehb-example-6" } });
+  else if (/design|redesign|candidate|binder/i.test(message) && proteinId === "A5F934") calls.push({ name: "start_design", arguments: { trajectory_id: "proteinmpnn-6ehb-example-6" } });
   else if (/show|find|search|where|proteins?|family|organism|enzyme|membrane|viral|receptor|transport/i.test(message)) calls.push({ name: "query_atlas", arguments: { query: message.slice(0, 240) } });
   const text = /design|redesign|candidate/i.test(message)
     ? proteinId === "A5F934" ? "Opening the attributable, precomputed ProteinMPNN 6EHB sequence-redesign journey." : "The imported design journey is eligible only for the sourced 6EHB target, UniProt A5F934."

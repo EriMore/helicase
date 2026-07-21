@@ -232,6 +232,30 @@ Same as the prior entry: automated reduced-motion/2560×1440 e2e coverage, a cre
 
 ---
 
+## 2026-07-20T00:00:00+01:00 - Design trajectory reveal
+
+**Phase:** Implementation
+
+**Objective**  
+Turn the attributable 6EHB ProteinMPNN artifact into an interruptible cinematic evidence reveal without fabricating unavailable biological stages.
+
+**Completed**
+- Added typed playback state and commands for play, pause, restart, step, seek, comparison and safe return through SceneController.
+- Added strict `design_binder` mapping for the eligible A5F934 / 6EHB target; it never generates a sequence.
+- Added a stage reveal HUD, scrubber, candidate comparison state and explicit imported-artifact language.
+- Preserved the evidence boundary for unavailable RFdiffusion frames, predicted structures, docking/interface metrics, confidence and wet-lab validation.
+
+**Git**
+- Branch: `agent/design-trajectory-reveal`.
+- Commit(s): `ef90967` (`Build interruptible design trajectory reveal`).
+- PR: Draft [#7](https://github.com/EriMore/helicase/pull/7).
+- Status: Pushed and validated.
+
+**Next**
+Run the full validation suite and production browser QA at 1440x900.
+
+**Superseded (2026-07-21):** the discrete stage/HUD/`design_binder` design from this entry was fully replaced by a continuous, on-screen, in-flight spatial sequence (`DesignState.progress`, `SEEK_DESIGN`/`SET_DESIGN_PLAYBACK`/`START_DESIGN`) per direct user instruction — see `docs/handoff/DESIGN_DELTA.md` §1. None of the commands, tools, or CSS listed above exist on `main` as of the 2026-07-21T17:15:00+00:00 entry above.
+
 ## 2026-07-20T05:40:00+01:00 - Functional-completion closeout
 
 **Phase:** Validation and publication

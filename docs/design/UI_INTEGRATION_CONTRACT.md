@@ -97,7 +97,7 @@ Confidence state is `unavailable | loading | available | mismatch | failed`. Ava
 
 ## Design-trajectory state
 
-Design state contains eligibility, objective, target identity/site, trajectory identity/version, stages, current stage, candidates, selected/comparison candidates, metrics, playback state, provenance and limitations. Precomputed stages are labelled precomputed. Stage time is evidence metadata, never a simulated live-compute claim.
+Design state contains eligibility, objective, target identity/site, trajectory identity/version, beats, continuous progress, candidates, selected candidate, metrics, playback state, provenance and limitations. Precomputed beats are labelled precomputed. Beat timing is evidence metadata, never a simulated live-compute claim. Playback is driven by `START_DESIGN`, `SET_DESIGN_PLAYBACK`, `SEEK_DESIGN` (a continuous `0..1` progress value, not a discrete stage index), `SELECT_DESIGN_CANDIDATE`, and `EXIT_DESIGN`; evidence-gate beats (no real backbone/fold artifact) remain visibly unavailable rather than fabricated.
 
 ## Copilot state
 
@@ -115,7 +115,7 @@ Errors use stable subsystem/code pairs, a safe public message, retryability, rec
 - Submit/cancel/clear/page a query; activate a query result or neighbourhood.
 - Enter/leave structure; retry structure; change representation; show/hide chain/ligand.
 - Activate/deactivate confidence; focus low/high-confidence ranges; inspect provenance.
-- Start/leave a design journey; move stage; select/compare candidate; inspect source/metrics.
+- Start/exit a design journey; play, pause, or scrub its continuous timeline; select a candidate; inspect source/metrics.
 - Submit/cancel/retry a copilot turn; approve only tool calls that are already bounded by product policy.
 - Dismiss/retry a recoverable error.
 
