@@ -1,376 +1,410 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import * as THREE from "three";
-import type { SceneMode } from "@/domain/atlas";
-import type { AtlasCluster, AtlasManifest, AtlasProtein, CameraContext } from "@/domain/atlas-data";
-import { CameraNavigation, cameraScale } from "@/engine/camera-navigation";
+import type { SceneState } from "@/domain/atlas";
+import type { AtlasProtein } from "@/domain/atlas-data";
+import { territories, territoryCenter, territoryIndexForRegion } from "@/domain/territories";
+import { CAMERA_FAR, CAMERA_FOV, CAMERA_NEAR, CameraEngine, TWEEN_MS } from "@/engine/camera-navigation";
 
-type WorldMetrics = { fps: number; visibleEntities: number; cameraDistance: number; heapMb: number | null };
+export type Theme = "light" | "dark";
+export type WorldMetrics = { fps: number; visibleCount: number };
+
+const THEME_TABLE: Record<Theme, { fam: string[]; teal: string; fog: string; fogNear: number; fogFar: number; size: number; additive: boolean; dimNon: number }> = {
+  light: { fam: ["#3c5a86", "#8f4a44", "#3f6f60", "#9a7a34", "#6a4a70", "#4a4f57"], teal: "#0c8c78", fog: "#efece4", fogNear: 300, fogFar: 1200, size: 22, additive: false, dimNon: 0.30 },
+  dark: { fam: ["#7d97d0", "#d68b83", "#5fc6a6", "#d9b96e", "#b490c8", "#9aa2b0"], teal: "#34d6b8", fog: "#0d1013", fogNear: 440, fogFar: 2400, size: 26, additive: true, dimNon: 0.26 },
+};
+
+const pointVertexShader = `
+attribute vec3 color;
+attribute float aScale;
+attribute float aMatch;
+attribute float aTerritory;
+uniform float uSize, uPR, uFogNear, uFogFar;
+varying vec3 vColor;
+varying float vFog, vMatch, vTerritory;
+void main() {
+  vColor = color; vMatch = aMatch; vTerritory = aTerritory;
+  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  gl_PointSize = min(aScale * uSize * uPR * (300.0 / -mv.z), 26.0 * uPR);
+  float d = -mv.z;
+  vFog = clamp((d - uFogNear) / (uFogFar - uFogNear), 0.0, 1.0);
+  gl_Position = projectionMatrix * mv;
+}`;
+
+const pointFragmentShader = `
+precision mediump float;
+varying vec3 vColor; varying float vFog, vMatch, vTerritory;
+uniform vec3 uFog, uTeal; uniform float uTheme, uDim, uDimNon, uActiveTerritory, uTerritoryFocus;
+void main() {
+  vec2 uv = gl_PointCoord - 0.5;
+  float d = length(uv);
+  float a = smoothstep(0.5, 0.24, d);
+  if (a <= 0.002) discard;
+  vec3 c = mix(vColor, uTeal, vMatch * 0.9);
+  float fogMix = uTheme < 0.5 ? 0.9 : 0.35;
+  c = mix(c, uFog, vFog * fogMix);
+  float alpha = a;
+  alpha *= mix(1.0, 1.0 - vFog * 0.82, step(uTheme, 0.5));
+  alpha *= uDim;
+  alpha *= mix(uDimNon, 1.0, vMatch);
+  if (uTerritoryFocus > 0.5) { float m = abs(vTerritory - uActiveTerritory) < 0.5 ? 1.0 : uDimNon; alpha *= m; }
+  gl_FragColor = vec4(c, alpha);
+}`;
+
+type ThreeRefs = {
+  renderer: THREE.WebGLRenderer; sceneObj: THREE.Scene; camera: THREE.PerspectiveCamera;
+  points: THREE.Points; geometry: THREE.BufferGeometry; material: THREE.ShaderMaterial;
+  base: Float32Array; target: Float32Array; territoryIndex: Int16Array;
+  marker: THREE.Sprite; raycaster: THREE.Raycaster;
+  proteinList: AtlasProtein[];
+  reflow: { active: boolean };
+};
+
+function makeBracketTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement("canvas");
+  canvas.width = 128; canvas.height = 128;
+  const ctx = canvas.getContext("2d")!;
+  ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 6; ctx.lineCap = "square";
+  const pad = 18; const len = 30; const size = 128;
+  const corners: Array<[number, number, number, number]> = [[pad, pad, 1, 1], [size - pad, pad, -1, 1], [pad, size - pad, 1, -1], [size - pad, size - pad, -1, -1]];
+  for (const [cx, cy, sx, sy] of corners) {
+    ctx.beginPath();
+    ctx.moveTo(cx, cy + sy * len); ctx.lineTo(cx, cy); ctx.lineTo(cx + sx * len, cy);
+    ctx.stroke();
+  }
+  return new THREE.CanvasTexture(canvas);
+}
 
 type WorldCanvasProps = {
-  mode: SceneMode;
-  manifest: AtlasManifest | null;
+  theme: Theme;
+  scene: SceneState;
   proteins: AtlasProtein[];
-  highlightedIds: string[];
-  selectedProteinId: string | null;
-  focusedRegionId: string | null;
-  restoreContext: CameraContext | null;
-  onSelectProtein: (protein: AtlasProtein, context: CameraContext) => void;
-  onFocusCluster: (cluster: AtlasCluster) => void;
+  onSelectProtein: (protein: AtlasProtein) => void;
+  onEnterTerritory: (territoryId: string) => void;
   onHoverProtein: (protein: AtlasProtein | null) => void;
   onMetrics: (metrics: WorldMetrics) => void;
 };
 
-const palette: Record<string, THREE.Color> = {
-  catalysis: new THREE.Color("#75ddff"), transport: new THREE.Color("#85a9ff"), signalling: new THREE.Color("#c7a2ff"),
-  genome: new THREE.Color("#70f1cf"), expression: new THREE.Color("#b5ddff"), immunity: new THREE.Color("#ff9fc8"),
-  structure: new THREE.Color("#d8f0ff"), metabolism: new THREE.Color("#89e6a7"), membrane: new THREE.Color("#6f87d9"),
-  viral: new THREE.Color("#ffb470"), regulation: new THREE.Color("#e8cb87"), unresolved: new THREE.Color("#78869b"),
-};
-
-const pointVertex = `
-attribute float atlasSize;
-varying vec3 vColor;
-varying float vFade;
-void main() {
-  vColor = color;
-  vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-  float perspective = clamp(250.0 / max(1.0, -mvPosition.z), 0.55, 5.5);
-  gl_PointSize = min(24.0, atlasSize * perspective);
-  gl_Position = projectionMatrix * mvPosition;
-  vFade = smoothstep(480.0, 32.0, -mvPosition.z);
-}`;
-
-const pointFragment = `
-uniform float opacity;
-varying vec3 vColor;
-varying float vFade;
-void main() {
-  vec2 centered = gl_PointCoord - vec2(0.5);
-  float radius = length(centered);
-  if (radius > 0.5) discard;
-  float core = smoothstep(0.5, 0.04, radius);
-  float halo = smoothstep(0.5, 0.18, radius) * 0.38;
-  gl_FragColor = vec4(vColor, (core + halo) * opacity * vFade);
-}`;
-
-function makePointMaterial(opacity: number) {
-  return new THREE.ShaderMaterial({
-    vertexShader: pointVertex,
-    fragmentShader: pointFragment,
-    uniforms: { opacity: { value: opacity } },
-    transparent: true,
-    depthWrite: false,
-    vertexColors: true,
-    blending: THREE.AdditiveBlending,
-  });
-}
-
-export function WorldCanvas({
-  mode, manifest, proteins, highlightedIds, selectedProteinId, focusedRegionId,
-  restoreContext,
-  onSelectProtein, onFocusCluster, onHoverProtein, onMetrics,
-}: WorldCanvasProps) {
+export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTerritory, onHoverProtein, onMetrics }: WorldCanvasProps) {
   const container = useRef<HTMLDivElement>(null);
-  const modeRef = useRef(mode);
-  const manifestRef = useRef(manifest);
+  const labelsWrap = useRef<HTMLDivElement>(null);
+  const territoryLabelEls = useRef<HTMLDivElement[]>([]);
+  const hoverLabelEl = useRef<HTMLDivElement | null>(null);
+
+  const engine = useRef(new CameraEngine());
+  const sceneRef = useRef(scene);
+  const themeRef = useRef(theme);
   const proteinsRef = useRef(proteins);
-  const highlightedRef = useRef(new Set(highlightedIds));
-  const selectedRef = useRef(selectedProteinId);
-  const focusedRegionRef = useRef(focusedRegionId);
-  const callbacks = useRef({ onSelectProtein, onFocusCluster, onHoverProtein, onMetrics });
-  const clusterPoints = useRef<THREE.Points | null>(null);
-  const proteinPoints = useRef<THREE.Points | null>(null);
-  const clusterIndex = useRef<AtlasCluster[]>([]);
-  const proteinIndex = useRef<AtlasProtein[]>([]);
-  const navigation = useRef(new CameraNavigation());
-  const queryReturnContext = useRef<CameraContext | null>(null);
-  const queryActive = useRef(false);
-  const [sceneEpoch, setSceneEpoch] = useState(0);
+  const callbacks = useRef({ onSelectProtein, onEnterTerritory, onHoverProtein, onMetrics });
 
-  useEffect(() => { modeRef.current = mode; }, [mode]);
-  useEffect(() => { manifestRef.current = manifest; }, [manifest]);
+  useEffect(() => { sceneRef.current = scene; }, [scene]);
+  useEffect(() => { themeRef.current = theme; }, [theme]);
   useEffect(() => { proteinsRef.current = proteins; }, [proteins]);
-  useEffect(() => { highlightedRef.current = new Set(highlightedIds); }, [highlightedIds]);
-  useEffect(() => { selectedRef.current = selectedProteinId; }, [selectedProteinId]);
-  useEffect(() => { focusedRegionRef.current = focusedRegionId; }, [focusedRegionId]);
-  useEffect(() => { callbacks.current = { onSelectProtein, onFocusCluster, onHoverProtein, onMetrics }; }, [onFocusCluster, onHoverProtein, onMetrics, onSelectProtein]);
+  useEffect(() => { callbacks.current = { onSelectProtein, onEnterTerritory, onHoverProtein, onMetrics }; }, [onSelectProtein, onEnterTerritory, onHoverProtein, onMetrics]);
 
-  useEffect(() => {
-    if (mode === "universe" && !selectedProteinId && restoreContext) navigation.current.restore(restoreContext);
-  }, [mode, restoreContext, selectedProteinId]);
+  const three = useRef<ThreeRefs | null>(null);
 
+  // Rebuild the point field whenever the loaded protein set changes.
   useEffect(() => {
-    const active = highlightedIds.length > 0;
-    if (active && !queryActive.current) {
-      queryReturnContext.current = navigation.current.snapshot("before-query");
-    } else if (!active && queryActive.current && queryReturnContext.current) {
-      navigation.current.restore(queryReturnContext.current);
-      queryReturnContext.current = null;
-    }
-    queryActive.current = active;
-  }, [highlightedIds]);
-
-  useEffect(() => {
-    const points = clusterPoints.current;
-    if (!points || !manifest) return;
-    points.geometry.dispose();
-    const positions = new Float32Array(manifest.clusters.length * 3);
-    const colors = new Float32Array(manifest.clusters.length * 3);
-    const sizes = new Float32Array(manifest.clusters.length);
-    manifest.clusters.forEach((cluster, index) => {
-      positions.set(cluster.center, index * 3);
-      const color = palette[cluster.region] ?? palette.unresolved;
-      colors.set([color.r, color.g, color.b], index * 3);
-      sizes[index] = 3.4 + Math.min(12, Math.log2(cluster.count + 1) * 1.15);
-    });
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-    geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-    geometry.setAttribute("atlasSize", new THREE.BufferAttribute(sizes, 1));
-    geometry.computeBoundingSphere();
-    points.geometry = geometry;
-    clusterIndex.current = manifest.clusters;
-  }, [manifest, sceneEpoch]);
-
-  useEffect(() => {
-    const points = proteinPoints.current;
-    if (!points) return;
-    points.geometry.dispose();
-    const highlighted = highlightedRef.current;
-    const renderedProteins = highlighted.size ? proteins.filter((protein) => highlighted.has(protein.id)) : proteins;
-    const positions = new Float32Array(renderedProteins.length * 3);
-    const colors = new Float32Array(renderedProteins.length * 3);
-    const sizes = new Float32Array(renderedProteins.length);
-    renderedProteins.forEach((protein, index) => {
-      positions.set(protein.position, index * 3);
-      const base = palette[protein.region] ?? palette.unresolved;
-      colors.set([base.r, base.g, base.b], index * 3);
-      sizes[index] = highlighted.has(protein.id) ? 5.8 : 2.1 + Math.min(2.6, Math.log2(Math.max(16, protein.length)) * 0.25);
-    });
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-    geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-    geometry.setAttribute("atlasSize", new THREE.BufferAttribute(sizes, 1));
-    geometry.computeBoundingSphere();
-    points.geometry = geometry;
-    proteinIndex.current = renderedProteins;
-    if (highlighted.size > 0) {
-      const matches = proteins.filter((protein) => highlighted.has(protein.id));
-      if (matches.length) {
-        const centre = matches.reduce((sum, protein) => sum.add(new THREE.Vector3(...protein.position)), new THREE.Vector3()).multiplyScalar(1 / matches.length);
-        const radius = matches.reduce((largest, protein) => Math.max(largest, centre.distanceTo(new THREE.Vector3(...protein.position))), 0);
-        const framingDistance = THREE.MathUtils.clamp(radius * 1.35 + 38, 85, 155);
-        navigation.current.focus(centre, framingDistance, "query-results");
+    const t = three.current;
+    if (!t) return;
+    const count = proteins.length;
+    const base = new Float32Array(count * 3);
+    const target = new Float32Array(count * 3);
+    const color = new Float32Array(count * 3);
+    const scale = new Float32Array(count);
+    const match = new Float32Array(count);
+    const territoryIndex = new Int16Array(count);
+    const table = THEME_TABLE[themeRef.current];
+    const highlighted = new Set(sceneRef.current.queryResultIds);
+    const activeTerritory = territories.findIndex((territory) => territory.id === sceneRef.current.territoryId);
+    proteins.forEach((protein, index) => {
+      base[index * 3] = protein.position[0]; base[index * 3 + 1] = protein.position[1]; base[index * 3 + 2] = protein.position[2];
+      const territoryIdx = territoryIndexForRegion(protein.region);
+      territoryIndex[index] = territoryIdx;
+      const c = new THREE.Color(table.fam[territoryIdx]);
+      color[index * 3] = c.r; color[index * 3 + 1] = c.g; color[index * 3 + 2] = c.b;
+      scale[index] = 0.5 + Math.min(1.1, Math.log2(Math.max(16, protein.length)) * 0.09);
+      match[index] = highlighted.has(protein.id) ? 1 : 0;
+      const expand = activeTerritory >= 0 && territoryIdx === activeTerritory;
+      const center = expand ? territoryCenter(activeTerritory) : null;
+      if (center) {
+        target[index * 3] = center[0] + (base[index * 3] - center[0]) * 1.7;
+        target[index * 3 + 1] = center[1] + (base[index * 3 + 1] - center[1]) * 1.7;
+        target[index * 3 + 2] = center[2] + (base[index * 3 + 2] - center[2]) * 1.7;
+      } else {
+        target[index * 3] = base[index * 3]; target[index * 3 + 1] = base[index * 3 + 1]; target[index * 3 + 2] = base[index * 3 + 2];
       }
+    });
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(target.slice(), 3));
+    geometry.setAttribute("color", new THREE.BufferAttribute(color, 3));
+    geometry.setAttribute("aScale", new THREE.BufferAttribute(scale, 1));
+    geometry.setAttribute("aMatch", new THREE.BufferAttribute(match, 1));
+    geometry.setAttribute("aTerritory", new THREE.BufferAttribute(territoryIndex.map(Number), 1));
+    geometry.computeBoundingSphere();
+    t.points.geometry.dispose();
+    t.points.geometry = geometry;
+    t.base = base; t.target = target; t.territoryIndex = territoryIndex; t.proteinList = proteins;
+    t.material.uniforms.uActiveTerritory.value = activeTerritory;
+    t.material.uniforms.uTerritoryFocus.value = activeTerritory >= 0 ? 1 : 0;
+  }, [proteins]);
+
+  // Recolor in place on theme change (no geometry rebuild needed).
+  useEffect(() => {
+    const t = three.current;
+    if (!t) return;
+    const table = THEME_TABLE[theme];
+    const colorAttr = t.points.geometry.getAttribute("color") as THREE.BufferAttribute | undefined;
+    if (colorAttr) {
+      const territoryAttr = t.points.geometry.getAttribute("aTerritory") as THREE.BufferAttribute;
+      for (let i = 0; i < colorAttr.count; i += 1) {
+        const c = new THREE.Color(table.fam[territoryAttr.getX(i)] ?? table.fam[5]);
+        colorAttr.setXYZ(i, c.r, c.g, c.b);
+      }
+      colorAttr.needsUpdate = true;
     }
-  }, [highlightedIds, proteins, sceneEpoch]);
+    t.material.uniforms.uTheme.value = theme === "light" ? 0 : 1;
+    t.material.uniforms.uFog.value.set(table.fog);
+    t.material.uniforms.uFogNear.value = table.fogNear;
+    t.material.uniforms.uFogFar.value = table.fogFar;
+    t.material.uniforms.uSize.value = table.size;
+    t.material.uniforms.uTeal.value.set(table.teal);
+    t.material.blending = table.additive ? THREE.AdditiveBlending : THREE.NormalBlending;
+    t.material.needsUpdate = true;
+    t.marker.material.color.set(table.teal);
+  }, [theme]);
 
+  // Camera choreography — driven by the exact command the SceneController just applied.
   useEffect(() => {
-    if (!manifest || !focusedRegionId) return;
-    const region = manifest.regions.find((candidate) => candidate.id === focusedRegionId);
-    if (!region) return;
-    navigation.current.focus(new THREE.Vector3(...region.center), 108, `region-${region.id}`);
-  }, [focusedRegionId, manifest]);
+    const t = three.current;
+    if (!t) return;
+    const cam = engine.current;
+    const command = scene.lastCommand;
+    if (!command) return;
 
-  useEffect(() => {
-    if (!selectedProteinId) return;
-    const protein = proteinsRef.current.find((candidate) => candidate.id === selectedProteinId);
-    if (!protein) return;
-    navigation.current.focus(new THREE.Vector3(...protein.position), 18, `protein-${protein.id}`);
-  }, [selectedProteinId]);
+    if (command === "ENTER_TERRITORY" && scene.territoryId) {
+      cam.captureLevel("universe");
+      const index = territories.findIndex((territory) => territory.id === scene.territoryId);
+      const center = territoryCenter(index);
+      applyTerritoryLayout(t, index);
+      cam.applyTarget({ target: new THREE.Vector3(...center), r: 260, theta: cam.cam.theta, phi: 1.05 }, TWEEN_MS.enterTerritoryCamera);
+    } else if (command === "SELECT_PROTEIN" && scene.selectedProteinId) {
+      cam.captureLevel(scene.territoryId ? "territory" : "universe");
+      const protein = t.proteinList.find((candidate) => candidate.id === scene.selectedProteinId);
+      if (protein) {
+        const point = new THREE.Vector3(...protein.position);
+        t.marker.position.copy(point); t.marker.visible = true;
+        cam.applyTarget({ target: point, r: 150, theta: cam.cam.theta, phi: 1.05 }, TWEEN_MS.selectProtein);
+      }
+    } else if (command === "INSPECT_STRUCTURE") {
+      cam.captureLevel("protein");
+      t.marker.visible = false;
+      cam.applyTarget({ target: cam.cam.target.clone(), r: 90, theta: cam.cam.theta + 0.5, phi: 1.02 }, TWEEN_MS.inspectStructure);
+    } else if (command === "START_DESIGN") {
+      cam.applyTarget({ target: cam.cam.target.clone(), r: 100, theta: cam.cam.theta + 0.4, phi: 1.0 }, TWEEN_MS.startDesign);
+    } else if (command === "EXIT_DESIGN") {
+      cam.restoreLevel("protein", TWEEN_MS.returnToGlance);
+    } else if (command === "RETURN_ONE_LEVEL" || command === "NAV_TO_LEVEL") {
+      if (scene.mode === "glance") { t.marker.visible = true; cam.restoreLevel("protein", TWEEN_MS.returnToGlance); }
+      else if (scene.mode === "territory" && scene.territoryId) {
+        t.marker.visible = false;
+        const index = territories.findIndex((territory) => territory.id === scene.territoryId);
+        applyTerritoryLayout(t, index);
+        if (!cam.restoreLevel("territory", TWEEN_MS.returnToTerritory)) {
+          cam.applyTarget({ target: new THREE.Vector3(...territoryCenter(index)), r: 260, theta: cam.cam.theta, phi: 1.05 }, TWEEN_MS.returnToTerritory);
+        }
+      } else if (scene.mode === "universe") {
+        t.marker.visible = false;
+        applyTerritoryLayout(t, -1);
+        cam.goHome(TWEEN_MS.returnToUniverseCamera);
+        cam.clearLevels();
+      }
+    } else if (command === "RETURN_TO_UNIVERSE") {
+      t.marker.visible = false;
+      applyTerritoryLayout(t, -1);
+      cam.goHome(TWEEN_MS.returnToUniverseCamera);
+      cam.clearLevels();
+    } else if (command === "QUERY_ATLAS") {
+      t.marker.visible = false;
+      const matches = new Set(scene.queryResultIds);
+      applyQueryLayout(t, matches);
+      if (matches.size) {
+        let sumX = 0, sumY = 0, sumZ = 0, matched = 0;
+        t.proteinList.forEach((protein, index) => { if (matches.has(protein.id)) { sumX += t.target[index * 3]; sumY += t.target[index * 3 + 1]; sumZ += t.target[index * 3 + 2]; matched += 1; } });
+        const center = matched ? new THREE.Vector3(sumX / matched, sumY / matched, sumZ / matched) : new THREE.Vector3();
+        cam.applyTarget({ target: center, r: 380, theta: 0.4, phi: 1.12 }, TWEEN_MS.queryMatch);
+      }
+    } else if (command === "CLEAR_QUERY") {
+      applyQueryLayout(t, new Set());
+      cam.applyTarget({ target: new THREE.Vector3(0, 0, 0), r: 600, theta: cam.cam.theta, phi: 1.12 }, TWEEN_MS.clearQuery);
+    }
+  }, [scene.lastCommand, scene.mode, scene.territoryId, scene.selectedProteinId, scene.queryResultIds]);
 
   useEffect(() => {
     const mount = container.current;
     if (!mount) return;
-    const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2("#02040a", 0.0032);
-    const camera = new THREE.PerspectiveCamera(42, mount.clientWidth / mount.clientHeight, 0.2, 1200);
-    const navigator = navigation.current;
-    navigator.reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    camera.position.copy(navigator.position);
-    const target = navigator.target.clone();
+
+    const sceneObj = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(CAMERA_FOV, mount.clientWidth / Math.max(1, mount.clientHeight), CAMERA_NEAR, CAMERA_FAR);
+    const cameraEngine = engine.current;
+    cameraEngine.reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    sceneObj.add(new THREE.AmbientLight(0xffffff, 0.85));
+
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.setSize(mount.clientWidth, mount.clientHeight);
-    renderer.setClearColor("#02040a", 1);
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.setClearColor(0x000000, 0);
     mount.appendChild(renderer.domElement);
 
-    const clusters = new THREE.Points(new THREE.BufferGeometry(), makePointMaterial(0.95));
-    const proteinField = new THREE.Points(new THREE.BufferGeometry(), makePointMaterial(0.78));
-    clusterPoints.current = clusters;
-    proteinPoints.current = proteinField;
-    setSceneEpoch((current) => current + 1);
-    scene.add(clusters, proteinField);
+    const table = THEME_TABLE[themeRef.current];
+    const material = new THREE.ShaderMaterial({
+      uniforms: {
+        uSize: { value: table.size }, uPR: { value: renderer.getPixelRatio() },
+        uFog: { value: new THREE.Color(table.fog) }, uFogNear: { value: table.fogNear }, uFogFar: { value: table.fogFar },
+        uTheme: { value: themeRef.current === "light" ? 0 : 1 }, uTeal: { value: new THREE.Color(table.teal) },
+        uDim: { value: 1 }, uDimNon: { value: 1 }, uActiveTerritory: { value: -1 }, uTerritoryFocus: { value: 0 },
+      },
+      vertexShader: pointVertexShader, fragmentShader: pointFragmentShader,
+      transparent: true, depthWrite: false, blending: table.additive ? THREE.AdditiveBlending : THREE.NormalBlending,
+    });
+    const points = new THREE.Points(new THREE.BufferGeometry(), material);
+    sceneObj.add(points);
 
-    const dustGeometry = new THREE.BufferGeometry();
-    const dust = new Float32Array(1800 * 3);
-    for (let index = 0; index < 1800; index += 1) {
-      const random = Math.sin(index * 991.17) * 43758.5453;
-      const random2 = Math.sin(index * 313.91) * 21413.317;
-      const random3 = Math.sin(index * 127.73) * 9357.11;
-      dust[index * 3] = (random - Math.floor(random) - 0.5) * 700;
-      dust[index * 3 + 1] = (random2 - Math.floor(random2) - 0.5) * 420;
-      dust[index * 3 + 2] = (random3 - Math.floor(random3) - 0.5) * 700;
-    }
-    dustGeometry.setAttribute("position", new THREE.BufferAttribute(dust, 3));
-    const dustMaterial = new THREE.PointsMaterial({ color: "#6f86a7", size: 0.26, transparent: true, opacity: 0.22, depthWrite: false });
-    const dustField = new THREE.Points(dustGeometry, dustMaterial);
-    scene.add(dustField);
+    const marker = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeBracketTexture(), color: table.teal, transparent: true, opacity: 0.85, depthTest: false }));
+    marker.visible = false;
+    sceneObj.add(marker);
 
     const raycaster = new THREE.Raycaster();
-    raycaster.params.Points = { threshold: 2.8 };
+    raycaster.params.Points = { threshold: 2.6 };
+
+    three.current = { renderer, sceneObj, camera, points, geometry: points.geometry, material, base: new Float32Array(0), target: new Float32Array(0), territoryIndex: new Int16Array(0), marker, raycaster, proteinList: [], reflow: { active: false } };
+
     const pointer = new THREE.Vector2();
-    let pointerDown = false;
-    let moved = false;
-    let startX = 0;
-    let startY = 0;
-    let lastX = 0;
-    let lastY = 0;
-    let pointerButton = 0;
-    let hoveredId: string | null = null;
-    const keys = new Set<string>();
+    let pointerDown = false; let panning = false; let moved = 0; let lastX = 0; let lastY = 0; let hoveredId: string | null = null; let moveThrottle = 0;
 
     const updatePointer = (event: PointerEvent) => {
       const rect = renderer.domElement.getBoundingClientRect();
       pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
     };
-    const findProtein = () => {
+    const cursorWorld = () => {
       raycaster.setFromCamera(pointer, camera);
-      const distance = camera.position.distanceTo(target);
-      if (distance < 175 && proteinIndex.current.length) {
-        const hit = raycaster.intersectObject(proteinField, false)[0];
-        if (hit?.index != null) return proteinIndex.current[hit.index] ?? null;
-      }
-      return null;
+      return raycaster.ray.origin.clone().add(raycaster.ray.direction.clone().multiplyScalar(engine.current.now.r));
     };
-    const findCluster = () => {
+    const pickProtein = (): AtlasProtein | null => {
+      if (sceneRef.current.mode !== "universe" && sceneRef.current.mode !== "territory") return null;
       raycaster.setFromCamera(pointer, camera);
-      const hit = raycaster.intersectObject(clusters, false)[0];
-      return hit?.index != null ? clusterIndex.current[hit.index] ?? null : null;
+      raycaster.params.Points!.threshold = engine.current.now.r * 0.02;
+      const hit = raycaster.intersectObject(points, false)[0];
+      return hit?.index != null ? three.current!.proteinList[hit.index] ?? null : null;
     };
+
     const onPointerDown = (event: PointerEvent) => {
       mount.focus({ preventScroll: true });
-      pointerDown = true; moved = false; pointerButton = event.button; startX = lastX = event.clientX; startY = lastY = event.clientY;
-      navigator.cancel();
+      pointerDown = true; panning = event.button === 2 || event.button === 1 || event.shiftKey; moved = 0;
+      lastX = event.clientX; lastY = event.clientY;
+      engine.current.cancel();
       renderer.domElement.setPointerCapture(event.pointerId);
     };
     const onPointerMove = (event: PointerEvent) => {
       updatePointer(event);
       if (pointerDown) {
         const dx = event.clientX - lastX; const dy = event.clientY - lastY;
-        moved ||= Math.hypot(event.clientX - startX, event.clientY - startY) > 5;
-        if (pointerButton === 2 || pointerButton === 1 || event.shiftKey) navigator.truck(dx, dy, camera, mount.clientHeight);
-        else navigator.orbit(dx, dy, mount.clientHeight);
+        moved += Math.abs(dx) + Math.abs(dy);
+        if (panning) engine.current.pan(dx, dy, camera.matrixWorld); else engine.current.orbit(dx, dy);
         lastX = event.clientX; lastY = event.clientY;
         return;
       }
-      const protein = findProtein();
+      moveThrottle += 1;
+      if (moveThrottle % 2 !== 0) return;
+      const protein = pickProtein();
       const nextId = protein?.id ?? null;
       if (nextId !== hoveredId) {
         hoveredId = nextId;
         callbacks.current.onHoverProtein(protein);
-        renderer.domElement.style.cursor = protein || findCluster() ? "crosshair" : "grab";
+        renderer.domElement.style.cursor = protein ? "pointer" : "grab";
       }
     };
     const onPointerUp = (event: PointerEvent) => {
       pointerDown = false;
       renderer.domElement.releasePointerCapture(event.pointerId);
-      if (moved) return;
+      if (moved > 6) return;
       updatePointer(event);
-      const protein = findProtein();
-      if (protein) {
-        const distance = camera.position.distanceTo(target);
-        callbacks.current.onSelectProtein(protein, {
-          position: camera.position.toArray() as [number, number, number],
-          target: target.toArray() as [number, number, number],
-          scale: cameraScale(distance),
-        });
-        return;
+      const protein = pickProtein();
+      if (protein) { callbacks.current.onSelectProtein(protein); return; }
+      if (sceneRef.current.mode === "universe" || sceneRef.current.mode === "territory") {
+        // A click that hit neither a protein nor a territory label is a deliberate miss — stay put.
       }
-      const cluster = findCluster();
-      if (cluster) {
-        navigator.focus(new THREE.Vector3(...cluster.center), Math.max(38, Math.min(82, 28 + Math.log2(cluster.count + 1) * 4)), `cluster-${cluster.id}`);
-        callbacks.current.onFocusCluster(cluster);
-      }
+    };
+    const onDoubleClick = (event: MouseEvent) => {
+      if (sceneRef.current.mode !== "universe" && sceneRef.current.mode !== "territory") return;
+      updatePointer(event as unknown as PointerEvent);
+      engine.current.focusDoubleClick(cursorWorld());
     };
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
       updatePointer(event as unknown as PointerEvent);
-      raycaster.setFromCamera(pointer, camera);
-      const anchorDistance = camera.position.distanceTo(target);
-      const anchor = raycaster.ray.at(anchorDistance, new THREE.Vector3());
-      const normalizedDelta = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? event.deltaY * 18 : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? event.deltaY * mount.clientHeight : event.deltaY;
-      navigator.dolly(normalizedDelta, anchor);
+      engine.current.dolly(event.deltaY, event.ctrlKey, cursorWorld());
     };
     const onContextMenu = (event: MouseEvent) => event.preventDefault();
-    const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.target as HTMLElement | null)?.matches("input,textarea,[contenteditable=true]")) return;
-      keys.add(event.code);
-      if (event.code === "Home") { event.preventDefault(); navigator.home(); }
-      if (event.code === "KeyR") navigator.resetOrientation();
-      if (event.code === "Backspace") { event.preventDefault(); navigator.back(); }
-      if (event.code === "Escape") { keys.clear(); navigator.cancel(); }
-    };
-    const onKeyUp = (event: KeyboardEvent) => keys.delete(event.code);
+
     renderer.domElement.addEventListener("pointerdown", onPointerDown);
     renderer.domElement.addEventListener("pointermove", onPointerMove);
     renderer.domElement.addEventListener("pointerup", onPointerUp);
+    renderer.domElement.addEventListener("dblclick", onDoubleClick);
     renderer.domElement.addEventListener("wheel", onWheel, { passive: false });
     renderer.domElement.addEventListener("contextmenu", onContextMenu);
-    window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
 
     const onResize = () => {
-      camera.aspect = mount.clientWidth / mount.clientHeight;
+      camera.aspect = mount.clientWidth / Math.max(1, mount.clientHeight);
       camera.updateProjectionMatrix();
       renderer.setSize(mount.clientWidth, mount.clientHeight);
     };
     window.addEventListener("resize", onResize);
 
-    const clock = new THREE.Timer();
-    clock.connect(document);
-    let animationFrame = 0;
-    let metricFrames = 0;
-    let metricStart = performance.now();
+    let animationFrame = 0; let lastTime = performance.now(); let metricFrames = 0; let metricStart = performance.now();
     const render = () => {
-      clock.update();
-      const elapsed = clock.getElapsed();
-      const dt = Math.min(clock.getDelta(), 0.05);
-      const state = modeRef.current;
-      if (state === "landing" && navigator.desiredPosition.distanceToSquared(new THREE.Vector3(0, 20, 278)) > 0.5) navigator.focus(new THREE.Vector3(), 278, "landing", false);
-      const forward = Number(keys.has("KeyW") || keys.has("ArrowUp")) - Number(keys.has("KeyS") || keys.has("ArrowDown"));
-      const right = Number(keys.has("KeyD") || keys.has("ArrowRight")) - Number(keys.has("KeyA") || keys.has("ArrowLeft"));
-      const vertical = Number(keys.has("KeyE")) - Number(keys.has("KeyQ"));
-      if (state === "universe" && (forward || right || vertical)) navigator.keyboard(forward, right, vertical, camera, dt);
-      const update = navigator.update(dt);
+      const now = performance.now();
+      const dt = Math.min((now - lastTime) / 1000, 0.05);
+      lastTime = now;
+      const currentScene = sceneRef.current;
+      const ambientEligible = currentScene.mode === "universe" || currentScene.mode === "territory";
+      const update = engine.current.update(dt, ambientEligible);
       camera.position.copy(update.position);
-      target.copy(update.target);
-      camera.lookAt(target);
-      const distance = camera.position.distanceTo(target);
-      const queryClusterFactor = highlightedRef.current.size ? 0.003 : 1;
-      const clusterOpacity = state === "structure" || state === "xray" || state === "designing" || state === "designComplete" ? 0.035 : (THREE.MathUtils.smoothstep(distance, 42, 190) * 0.86 + 0.08) * queryClusterFactor;
-      const proteinOpacity = state === "structure" || state === "xray" || state === "designing" || state === "designComplete" ? 0.025 : (1 - THREE.MathUtils.smoothstep(distance, 95, 245)) * 0.95;
-      (clusters.material as THREE.ShaderMaterial).uniforms.opacity.value = clusterOpacity;
-      (proteinField.material as THREE.ShaderMaterial).uniforms.opacity.value = proteinOpacity;
-      clusters.rotation.y = Math.sin(elapsed * 0.025) * 0.006;
-      proteinField.rotation.y = clusters.rotation.y;
-      dustField.rotation.y = elapsed * 0.0018;
-      renderer.render(scene, camera);
+      camera.lookAt(update.target);
+
+      const targetDim = currentScene.mode === "inspect" || currentScene.mode === "design" ? 0.24 : currentScene.mode === "glance" ? 0.6 : 1;
+      material.uniforms.uDim.value += (targetDim - material.uniforms.uDim.value) * 0.08;
+      const dimNonTarget = currentScene.queryResultIds.length || material.uniforms.uTerritoryFocus.value > 0.5 ? THEME_TABLE[themeRef.current].dimNon : 1;
+      material.uniforms.uDimNon.value += (dimNonTarget - material.uniforms.uDimNon.value) * 0.08;
+
+      const t = three.current;
+      if (t) {
+        const positionAttr = t.points.geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
+        if (positionAttr) {
+          const array = positionAttr.array as Float32Array;
+          let changed = false;
+          for (let i = 0; i < array.length; i += 1) {
+            const delta = t.target[i] - array[i];
+            if (Math.abs(delta) > 0.001) { array[i] += delta * 0.08; changed = true; }
+          }
+          if (changed) positionAttr.needsUpdate = true;
+        }
+        if (t.marker.visible) {
+          const distance = camera.position.distanceTo(t.marker.position);
+          t.marker.scale.setScalar(distance * 0.09);
+          t.marker.material.opacity = 0.7 + Math.sin(now * 0.004) * 0.3;
+        }
+      }
+
+      renderer.render(sceneObj, camera);
+      projectLabels(camera, mount, engine.current, territoryLabelEls.current, currentScene, hoveredId, proteinsRef.current, hoverLabelEl.current);
 
       metricFrames += 1;
-      const now = performance.now();
       if (now - metricStart >= 1000) {
-        const memory = (performance as Performance & { memory?: { usedJSHeapSize: number } }).memory;
-        callbacks.current.onMetrics({
-          fps: Math.round(metricFrames * 1000 / (now - metricStart)),
-          visibleEntities: highlightedRef.current.size ? proteinIndex.current.length : distance > 150 ? clusterIndex.current.length : proteinIndex.current.length,
-          cameraDistance: Math.round(distance),
-          heapMb: memory ? Math.round(memory.usedJSHeapSize / 1048576) : null,
-        });
+        callbacks.current.onMetrics({ fps: Math.round((metricFrames * 1000) / (now - metricStart)), visibleCount: three.current?.proteinList.length ?? 0 });
         metricFrames = 0; metricStart = now;
       }
       animationFrame = requestAnimationFrame(render);
@@ -379,25 +413,109 @@ export function WorldCanvas({
 
     return () => {
       cancelAnimationFrame(animationFrame);
-      clock.dispose();
       window.removeEventListener("resize", onResize);
       renderer.domElement.removeEventListener("pointerdown", onPointerDown);
       renderer.domElement.removeEventListener("pointermove", onPointerMove);
       renderer.domElement.removeEventListener("pointerup", onPointerUp);
+      renderer.domElement.removeEventListener("dblclick", onDoubleClick);
       renderer.domElement.removeEventListener("wheel", onWheel);
       renderer.domElement.removeEventListener("contextmenu", onContextMenu);
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
-      clusters.geometry.dispose(); (clusters.material as THREE.Material).dispose();
-      proteinField.geometry.dispose(); (proteinField.material as THREE.Material).dispose();
-      dustGeometry.dispose(); dustMaterial.dispose(); renderer.dispose();
-      clusterPoints.current = null; proteinPoints.current = null;
+      points.geometry.dispose(); material.dispose();
+      (marker.material as THREE.SpriteMaterial).map?.dispose();
+      (marker.material as THREE.Material).dispose();
+      renderer.dispose();
+      three.current = null;
       if (renderer.domElement.parentElement === mount) mount.removeChild(renderer.domElement);
     };
   }, []);
 
   return <>
-    <p id="atlas-navigation-help" className="sr-only">Navigate the protein universe with pointer drag, shift drag to pan, wheel to move through scale, W A S D or arrow keys to move, Q and E vertically, Home to return home, R to reset orientation, Backspace to restore the previous camera, and Escape to interrupt automated movement.</p>
-    <div className="world-canvas" ref={container} role="application" tabIndex={0} aria-label="Navigable spatial protein atlas" aria-describedby="atlas-navigation-help" />
+    <p id="atlas-navigation-help" className="hx-sr-only">Navigate the protein universe by left-drag to orbit, right-drag, middle-drag or shift-drag to pan, scroll to zoom toward the pointer, and double-click to focus. Escape returns one depth level.</p>
+    <div className="hx-canvas-layer" ref={container} role="application" tabIndex={0} aria-label="Navigable spatial protein atlas" aria-describedby="atlas-navigation-help" />
+    <div className="hx-labels" ref={labelsWrap}>
+      {territories.map((territory, index) => <div
+        key={territory.id}
+        ref={(el) => { if (el) territoryLabelEls.current[index] = el; }}
+        className="hx-label hx-label-territory"
+        style={{ display: "none" }}
+        onClick={() => onEnterTerritory(territory.id)}
+      >
+        <div className="hx-label-eyebrow">TERRITORY {String(index + 1).padStart(2, "0")}</div>
+        <div className="hx-label-name serif">{territory.label}</div>
+        <div className="hx-label-enter mono">ENTER ›</div>
+      </div>)}
+      <div ref={hoverLabelEl} className="hx-label hx-label-hero" style={{ display: "none" }}>
+        <div className="hx-label-hero-id mono" />
+        <div className="hx-label-hero-name serif" />
+      </div>
+    </div>
   </>;
+}
+
+function applyTerritoryLayout(t: ThreeRefs, activeTerritory: number) {
+  const center = activeTerritory >= 0 ? territoryCenter(activeTerritory) : null;
+  for (let index = 0; index < t.proteinList.length; index += 1) {
+    const idx = t.territoryIndex[index];
+    if (center && idx === activeTerritory) {
+      t.target[index * 3] = center[0] + (t.base[index * 3] - center[0]) * 1.7;
+      t.target[index * 3 + 1] = center[1] + (t.base[index * 3 + 1] - center[1]) * 1.7;
+      t.target[index * 3 + 2] = center[2] + (t.base[index * 3 + 2] - center[2]) * 1.7;
+    } else {
+      t.target[index * 3] = t.base[index * 3]; t.target[index * 3 + 1] = t.base[index * 3 + 1]; t.target[index * 3 + 2] = t.base[index * 3 + 2];
+    }
+  }
+  t.material.uniforms.uActiveTerritory.value = activeTerritory;
+  t.material.uniforms.uTerritoryFocus.value = activeTerritory >= 0 ? 1 : 0;
+}
+
+function applyQueryLayout(t: ThreeRefs, matches: Set<string>) {
+  const matchAttr = t.points.geometry.getAttribute("aMatch") as THREE.BufferAttribute | undefined;
+  for (let index = 0; index < t.proteinList.length; index += 1) {
+    const isMatch = matches.has(t.proteinList[index].id);
+    if (matchAttr) matchAttr.setX(index, isMatch ? 1 : 0);
+    if (matches.size === 0) { t.target[index * 3] = t.base[index * 3]; t.target[index * 3 + 1] = t.base[index * 3 + 1]; t.target[index * 3 + 2] = t.base[index * 3 + 2]; continue; }
+    if (isMatch) {
+      t.target[index * 3] = t.base[index * 3]; t.target[index * 3 + 1] = t.base[index * 3 + 1] + 10; t.target[index * 3 + 2] = t.base[index * 3 + 2] * 0.4;
+    } else {
+      const length = Math.hypot(t.base[index * 3], t.base[index * 3 + 1], t.base[index * 3 + 2]) || 1;
+      const push = 130 / length;
+      t.target[index * 3] = t.base[index * 3] * (1 + push); t.target[index * 3 + 1] = t.base[index * 3 + 1] * (1 + push); t.target[index * 3 + 2] = t.base[index * 3 + 2] * (1 + push);
+    }
+  }
+  if (matchAttr) matchAttr.needsUpdate = true;
+}
+
+function projectLabels(camera: THREE.PerspectiveCamera, mount: HTMLDivElement, cameraEngine: CameraEngine, territoryEls: HTMLDivElement[], scene: SceneState, hoveredId: string | null, proteins: AtlasProtein[], hoverLabel: HTMLDivElement | null) {
+  const width = mount.clientWidth; const height = mount.clientHeight;
+  const showTerritories = scene.mode === "universe" || scene.mode === "territory";
+  const projected = new THREE.Vector3();
+  territories.forEach((territory, index) => {
+    const el = territoryEls[index];
+    if (!el) return;
+    const center = territoryCenter(index);
+    projected.set(center[0], center[1] + (scene.territoryId === territory.id ? center[1] * 0.7 : 0), center[2]).project(camera);
+    const onscreen = projected.z < 1 && Math.abs(projected.x) < 1.05 && Math.abs(projected.y) < 1.05;
+    if (showTerritories && onscreen) {
+      el.style.left = `${(projected.x * 0.5 + 0.5) * width}px`;
+      el.style.top = `${(-projected.y * 0.5 + 0.5) * height}px`;
+      el.style.display = "block";
+      el.style.opacity = scene.mode === "territory" ? (scene.territoryId === territory.id ? "1" : "0.12") : "1";
+    } else {
+      el.style.display = "none";
+    }
+  });
+  if (hoverLabel) {
+    const protein = hoveredId ? proteins.find((candidate) => candidate.id === hoveredId) ?? null : null;
+    if (protein && (scene.mode === "universe" || scene.mode === "territory")) {
+      projected.set(...protein.position).project(camera);
+      if (projected.z < 1) {
+        hoverLabel.style.left = `${(projected.x * 0.5 + 0.5) * width}px`;
+        hoverLabel.style.top = `${(-projected.y * 0.5 + 0.5) * height}px`;
+        hoverLabel.style.display = "block";
+        const idEl = hoverLabel.querySelector(".hx-label-hero-id"); if (idEl) idEl.textContent = protein.id;
+        const nameEl = hoverLabel.querySelector(".hx-label-hero-name"); if (nameEl) nameEl.textContent = protein.name;
+      } else hoverLabel.style.display = "none";
+    } else hoverLabel.style.display = "none";
+  }
+  void cameraEngine;
 }

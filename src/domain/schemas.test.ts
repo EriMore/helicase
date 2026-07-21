@@ -28,7 +28,7 @@ describe("scientific runtime schemas", () => {
   });
 
   it("rejects unbounded copilot tool arguments", () => {
-    expect(parseCopilotToolCall("set_design_stage", { stage_index: 99 })).toBeNull();
+    expect(parseCopilotToolCall("start_design", { trajectory_id: "unverified-trajectory" })).toBeNull();
     expect(parseCopilotToolCall("query_atlas", { query: "kinase", injected: true })).toBeNull();
     expect(parseCopilotToolCall("return_to_universe", {})).toEqual({ name: "return_to_universe", arguments: {} });
   });

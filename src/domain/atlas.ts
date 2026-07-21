@@ -1,90 +1,186 @@
-import type { CameraContext } from "./atlas-data";
+export type SceneMode = "universe" | "territory" | "glance" | "inspect" | "design";
+export type StructureRepresentation = "cartoon" | "surface" | "ball-and-stick" | "spacefill";
+export type StructureColorMode = "chain" | "domain";
+export type IdentityTab = "glance" | "learn";
+export type DesignPlayback = "playing" | "paused";
 
-export type SceneMode = "landing" | "universe" | "diving" | "structure" | "xray" | "designing" | "designComplete";
+export type ResidueFocus = { start: number; end: number; chain?: string; requestId: number };
+export type SequenceSelection = { start: number; end: number };
 
-export type Protein = {
-  id: string;
-  name: string;
-  source: string;
-  accession: string;
-  family: string;
-  length: number;
-  confidence: number | null;
-  designableSite: { id: string; name: string; residues: string };
-  citation: string;
+export type DesignState = {
+  trajectoryId: string;
+  specification: string;
+  playback: DesignPlayback;
+  /** Continuous 0..1 position across the full spatial trajectory — never a discrete click-through index. */
+  progress: number;
+  selectedCandidateId: string | null;
 };
 
 export type SceneCommand =
-  | { type: "ENTER_ATLAS" }
-  | { type: "FLY_TO_PROTEIN"; proteinId: string }
+  | { type: "SELECT_PROTEIN"; proteinId: string }
+  | { type: "ENTER_TERRITORY"; territoryId: string }
+  | { type: "NAV_TO_LEVEL"; level: "universe" | "territory" | "protein" | "structure" }
+  | { type: "RETURN_ONE_LEVEL" }
   | { type: "RETURN_TO_UNIVERSE" }
-  | { type: "SET_CAMERA_CONTEXT"; context: CameraContext }
   | { type: "QUERY_ATLAS"; query: string; resultIds: string[] }
   | { type: "CLEAR_QUERY" }
-  | { type: "FOCUS_REGION"; regionId: string }
-  | { type: "COLOR_BY"; scheme: "confidence" | "trusted_core" | "hydrophobicity" }
-  | { type: "SET_REPRESENTATION"; representation: "cartoon" | "surface" | "ball-and-stick" }
+  | { type: "SET_TAB"; tab: IdentityTab }
+  | { type: "TOGGLE_THREADS" }
+  | { type: "OPEN_SEQUENCE" }
+  | { type: "CLOSE_SEQUENCE" }
+  | { type: "SET_SEQUENCE_SELECTION"; selection: SequenceSelection | null }
+  | { type: "INSPECT_STRUCTURE" }
+  | { type: "SET_REPRESENTATION"; representation: StructureRepresentation }
+  | { type: "SET_COLOR_MODE"; colorMode: StructureColorMode }
   | { type: "SET_LIGAND_VISIBILITY"; visible: boolean }
+  | { type: "SET_CONFIDENCE_XRAY"; visible: boolean }
   | { type: "FOCUS_RESIDUES"; start: number; end: number; chain?: string; requestId: number }
   | { type: "RETRY_STRUCTURE" }
-  | { type: "START_DESIGN_JOURNEY"; trajectoryId: string; specification: string }
-  | { type: "SET_DESIGN_STAGE"; stageIndex: number }
+  | { type: "START_DESIGN"; trajectoryId: string; specification: string }
+  | { type: "SET_DESIGN_PLAYBACK"; playback: DesignPlayback }
+  | { type: "SEEK_DESIGN"; progress: number }
   | { type: "SELECT_DESIGN_CANDIDATE"; candidateId: string }
-  | { type: "LEAVE_DESIGN_JOURNEY" };
+  | { type: "EXIT_DESIGN" };
 
 export type SceneState = {
   mode: SceneMode;
   selectedProteinId: string | null;
+  territoryId: string | null;
   query: string;
   queryResultIds: string[];
-  focusedRegionId: string | null;
-  cameraContext: CameraContext | null;
-  designSpecification: string | null;
-  designTrajectoryId: string | null;
-  designStageIndex: number;
-  selectedDesignCandidateId: string | null;
-  structureRepresentation: "cartoon" | "surface" | "ball-and-stick";
+  tab: IdentityTab;
+  threadsOn: boolean;
+  seqOpen: boolean;
+  seqSelection: SequenceSelection | null;
+  structureRepresentation: StructureRepresentation;
+  structureColorMode: StructureColorMode;
   ligandsVisible: boolean;
-  residueFocus: { start: number; end: number; chain?: string; requestId: number } | null;
+  confidenceXray: boolean;
+  residueFocus: ResidueFocus | null;
   structureRetry: number;
+  design: DesignState | null;
   lastCommand: SceneCommand["type"] | null;
 };
 
 export const initialSceneState: SceneState = {
-  mode: "landing",
+  mode: "universe",
   selectedProteinId: null,
+  territoryId: null,
   query: "",
   queryResultIds: [],
-  focusedRegionId: null,
-  cameraContext: null,
-  designSpecification: null,
-  designTrajectoryId: null,
-  designStageIndex: 0,
-  selectedDesignCandidateId: null,
+  tab: "glance",
+  threadsOn: false,
+  seqOpen: false,
+  seqSelection: null,
   structureRepresentation: "cartoon",
+  structureColorMode: "chain",
   ligandsVisible: true,
+  confidenceXray: false,
   residueFocus: null,
   structureRetry: 0,
+  design: null,
   lastCommand: null,
+};
+
+const structureDefaults = {
+  structureRepresentation: "cartoon" as const,
+  structureColorMode: "chain" as const,
+  ligandsVisible: true,
+  confidenceXray: false,
+  residueFocus: null,
 };
 
 export function reduceScene(state: SceneState, command: SceneCommand): SceneState {
   switch (command.type) {
-    case "ENTER_ATLAS": return { ...state, mode: "universe", lastCommand: command.type };
-    case "FLY_TO_PROTEIN": return { ...state, mode: "diving", selectedProteinId: command.proteinId, structureRepresentation: "cartoon", ligandsVisible: true, residueFocus: null, lastCommand: command.type };
-    case "RETURN_TO_UNIVERSE": return { ...state, mode: "universe", selectedProteinId: null, lastCommand: command.type };
-    case "SET_CAMERA_CONTEXT": return { ...state, cameraContext: command.context, lastCommand: command.type };
-    case "QUERY_ATLAS": return { ...state, query: command.query, queryResultIds: command.resultIds, mode: "universe", lastCommand: command.type };
-    case "CLEAR_QUERY": return { ...state, query: "", queryResultIds: [], lastCommand: command.type };
-    case "FOCUS_REGION": return { ...state, focusedRegionId: command.regionId, mode: "universe", lastCommand: command.type };
-    case "COLOR_BY": return { ...state, mode: command.scheme === "trusted_core" ? "xray" : "structure", lastCommand: command.type };
-    case "SET_REPRESENTATION": return { ...state, structureRepresentation: command.representation, lastCommand: command.type };
-    case "SET_LIGAND_VISIBILITY": return { ...state, ligandsVisible: command.visible, lastCommand: command.type };
-    case "FOCUS_RESIDUES": return { ...state, residueFocus: { start: Math.min(command.start, command.end), end: Math.max(command.start, command.end), chain: command.chain, requestId: command.requestId }, lastCommand: command.type };
-    case "RETRY_STRUCTURE": return { ...state, structureRetry: state.structureRetry + 1, lastCommand: command.type };
-    case "START_DESIGN_JOURNEY": return { ...state, mode: "designing", designTrajectoryId: command.trajectoryId, designSpecification: command.specification, designStageIndex: 0, selectedDesignCandidateId: null, lastCommand: command.type };
-    case "SET_DESIGN_STAGE": return { ...state, mode: "designing", designStageIndex: Math.max(0, command.stageIndex), lastCommand: command.type };
-    case "SELECT_DESIGN_CANDIDATE": return { ...state, selectedDesignCandidateId: command.candidateId, lastCommand: command.type };
-    case "LEAVE_DESIGN_JOURNEY": return { ...state, mode: "structure", designTrajectoryId: null, designSpecification: null, designStageIndex: 0, selectedDesignCandidateId: null, lastCommand: command.type };
+    case "SELECT_PROTEIN":
+      return {
+        ...state, ...structureDefaults,
+        mode: "glance", selectedProteinId: command.proteinId, tab: "glance",
+        threadsOn: false, seqOpen: false, seqSelection: null, design: null,
+        lastCommand: command.type,
+      };
+    case "ENTER_TERRITORY":
+      return {
+        ...state, mode: "territory", territoryId: command.territoryId, selectedProteinId: null,
+        query: "", queryResultIds: [], design: null, seqOpen: false, threadsOn: false,
+        lastCommand: command.type,
+      };
+    case "NAV_TO_LEVEL": {
+      if (command.level === "universe") return reduceScene(state, { type: "RETURN_TO_UNIVERSE" });
+      if (command.level === "territory") {
+        if (state.territoryId == null || !(state.mode === "glance" || state.mode === "inspect" || state.mode === "design")) return state;
+        return { ...state, mode: "territory", selectedProteinId: null, design: null, seqOpen: false, threadsOn: false, lastCommand: command.type };
+      }
+      if (command.level === "protein") {
+        if (state.selectedProteinId == null || !(state.mode === "inspect" || state.mode === "design")) return state;
+        return { ...state, mode: "glance", design: null, seqOpen: false, lastCommand: command.type };
+      }
+      if (command.level === "structure") {
+        if (state.selectedProteinId == null || state.mode !== "glance") return state;
+        return { ...state, ...structureDefaults, mode: "inspect", lastCommand: command.type };
+      }
+      return state;
+    }
+    case "RETURN_ONE_LEVEL": {
+      if (state.mode === "design") return reduceScene(state, { type: "EXIT_DESIGN" });
+      if (state.mode === "inspect") return { ...state, mode: "glance", seqOpen: false, lastCommand: command.type };
+      if (state.mode === "glance") return state.territoryId != null
+        ? { ...state, mode: "territory", selectedProteinId: null, threadsOn: false, lastCommand: command.type }
+        : reduceScene(state, { type: "RETURN_TO_UNIVERSE" });
+      if (state.mode === "territory") return reduceScene(state, { type: "RETURN_TO_UNIVERSE" });
+      return state;
+    }
+    case "RETURN_TO_UNIVERSE":
+      return {
+        ...state, mode: "universe", selectedProteinId: null, territoryId: null,
+        query: "", queryResultIds: [], threadsOn: false, seqOpen: false, design: null,
+        lastCommand: command.type,
+      };
+    case "QUERY_ATLAS":
+      return {
+        ...state, mode: "universe", selectedProteinId: null, territoryId: null,
+        query: command.query, queryResultIds: command.resultIds, design: null,
+        lastCommand: command.type,
+      };
+    case "CLEAR_QUERY":
+      return { ...state, query: "", queryResultIds: [], lastCommand: command.type };
+    case "SET_TAB":
+      return { ...state, tab: command.tab, lastCommand: command.type };
+    case "TOGGLE_THREADS":
+      return { ...state, threadsOn: !state.threadsOn, lastCommand: command.type };
+    case "OPEN_SEQUENCE":
+      return { ...state, seqOpen: true, lastCommand: command.type };
+    case "CLOSE_SEQUENCE":
+      return { ...state, seqOpen: false, lastCommand: command.type };
+    case "SET_SEQUENCE_SELECTION":
+      return { ...state, seqSelection: command.selection, lastCommand: command.type };
+    case "INSPECT_STRUCTURE":
+      return { ...state, ...structureDefaults, mode: "inspect", lastCommand: command.type };
+    case "SET_REPRESENTATION":
+      return { ...state, structureRepresentation: command.representation, lastCommand: command.type };
+    case "SET_COLOR_MODE":
+      return { ...state, structureColorMode: command.colorMode, lastCommand: command.type };
+    case "SET_LIGAND_VISIBILITY":
+      return { ...state, ligandsVisible: command.visible, lastCommand: command.type };
+    case "SET_CONFIDENCE_XRAY":
+      return { ...state, confidenceXray: command.visible, lastCommand: command.type };
+    case "FOCUS_RESIDUES":
+      return { ...state, residueFocus: { start: Math.min(command.start, command.end), end: Math.max(command.start, command.end), chain: command.chain, requestId: command.requestId }, lastCommand: command.type };
+    case "RETRY_STRUCTURE":
+      return { ...state, structureRetry: state.structureRetry + 1, lastCommand: command.type };
+    case "START_DESIGN":
+      return {
+        ...state, mode: "design",
+        design: { trajectoryId: command.trajectoryId, specification: command.specification, playback: "playing", progress: 0, selectedCandidateId: null },
+        seqOpen: false, lastCommand: command.type,
+      };
+    case "SET_DESIGN_PLAYBACK":
+      return state.design ? { ...state, design: { ...state.design, playback: command.playback }, lastCommand: command.type } : state;
+    case "SEEK_DESIGN":
+      return state.design ? { ...state, design: { ...state.design, progress: Math.max(0, Math.min(1, command.progress)) }, lastCommand: command.type } : state;
+    case "SELECT_DESIGN_CANDIDATE":
+      return state.design ? { ...state, design: { ...state.design, selectedCandidateId: command.candidateId }, lastCommand: command.type } : state;
+    case "EXIT_DESIGN":
+      return { ...state, mode: "inspect", design: null, lastCommand: command.type };
   }
 }
