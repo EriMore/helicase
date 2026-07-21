@@ -5,26 +5,30 @@ type HeaderProps = {
   releaseLabel: string;
   soundOn: boolean;
   onToggleSound: () => void;
+  ambientOn: boolean;
+  onToggleAmbient: () => void;
   onToggleTheme: () => void;
   onHome: () => void;
 };
 
-export function Header({ theme, releaseLabel, soundOn, onToggleSound, onToggleTheme, onHome }: HeaderProps) {
-  const lockupSrc = theme === "light" ? "/brand/logo/logo_full_black_svg.svg" : "/brand/logo/logo_full_white_svg.svg";
+export function Header({ theme, releaseLabel, soundOn, onToggleSound, ambientOn, onToggleAmbient, onToggleTheme, onHome }: HeaderProps) {
+  const markSrc = theme === "light" ? "/brand/logo/icon_black_svg.svg" : "/brand/logo/icon_white_svg.svg";
+  const wordSrc = theme === "light" ? "/brand/logo/word_black.png" : "/brand/logo/word_white.png";
   return (
     <header className="hx-header">
-      <div className="hx-brand hx-glass">
-        <button type="button" onClick={onHome} aria-label="Return to the Universe" style={{ all: "unset", cursor: "pointer", display: "flex", alignItems: "center" }}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={lockupSrc} alt="Helicase" className="hx-brand-word" style={{ height: 20 }} />
-        </button>
-      </div>
+      <button type="button" className="hx-brand hx-glass" onClick={onHome} aria-label="Return to the Universe" style={{ border: 0 }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={markSrc} alt="" className="hx-brand-mark" />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={wordSrc} alt="HELICASE" className="hx-brand-word" />
+      </button>
       <div className="hx-header-actions hx-glass">
         <span className="hx-status-chip mono">
           <span className="hx-status-dot" />
           {releaseLabel}
         </span>
         <button className="hx-toggle mono" onClick={onToggleSound}>{soundOn ? "SOUND ●" : "SOUND ○"}</button>
+        <button className="hx-toggle mono" onClick={onToggleAmbient} title="Ambient soundscape (off by default, independent of cue sounds)">{ambientOn ? "AMBIENT ●" : "AMBIENT ○"}</button>
         <button className="hx-toggle hx-toggle-theme mono" onClick={onToggleTheme}>{theme === "light" ? "DARK" : "LIGHT"}</button>
       </div>
     </header>

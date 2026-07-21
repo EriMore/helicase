@@ -73,6 +73,46 @@ See `docs/handoff/CURRENT_STATE.md` "Exact next task" — reduced-motion/wider-b
 
 ---
 
+## 2026-07-21T06:45:00+00:00 - Live user-testing bugfix round: 12 real defects root-caused and fixed
+
+**Phase:** Validation / hardening, driven by direct human testing of the shipped build
+
+**Objective**
+The user ran the actual production build (not just this session's automated checks) and reported a concrete list of defects. Root-cause and fix every one — no cosmetic patches over unfixed root causes.
+
+**Completed**
+- **Mol* infinite reinit loop → the session's most severe bug.** `structureDomains` in `AtlasExperience.tsx` was recomputed via `.map()` on every render, giving it a new array reference roughly once a second (driven by the FPS-counter callback). `StructureView`'s Mol* mount `useEffect` depended on that array directly, so it fully tore down and rebuilt the entire Mol* plugin on that same ~1s cadence — the reported "screen keeps glitching," the flood of `Symbol 'ma.quality-assessment.pLDDT' already added` console warnings, and (very likely, given rapid WebGL-context churn) the reported "Universe goes blank after leaving a broken protein view" via concurrent-context exhaustion. Fixed with `useMemo` keyed on the (correctly stable) `detail` object.
+- **Universe "too dense and bunched into the center."** Diagnosed as a real scale mismatch, not a display bug: the real corpus's spatialization coordinates (`src/domain/spatialization.ts`) live within ~±100 world units, inherited from the pre-Claude-Design engine's `r ∈ [8,520]` camera clamp, while the design's camera contract (`MOTION_AND_CAMERA_SPEC.md`) uses much larger absolute distances tuned against the prototype's bigger synthetic dataset. Added `WORLD_SCALE = 6` + a `worldPosition()` helper (`src/domain/territories.ts`) applied at every point real protein/territory coordinates enter world space in `WorldCanvas.tsx`, and raised the default arrival framing from the spec's literal r:640 to r:900 to give the six genuinely-unevenly-sized real territories room to read as distinct. Recorded as `DESIGN_DELTA.md` item 6 — a deliberate, reasoned deviation, not an oversight.
+- **Dark-mode points blowing out to solid white.** 75,000 points at additive blending is far denser than the prototype's 13,400; added a dark-mode-only alpha damping term in the point fragment shader.
+- **Header logo "too small."** Root cause: an inline style was squashing the *combined* icon+wordmark lockup SVG to 20px tall, shrinking the icon glyph inside it far below its intended size. Copied the real wordmark PNGs out of the prototype's asset bundle (they existed but were never copied into `public/brand/logo/`) and rebuilt the header to show the icon-only mark at its correct 28px plus the real wordmark at 12px, closing the previously-accepted "combined lockup" deviation.
+- **Ask Atlas / query results "obscured by the rest of the proteins."** Two compounding bugs, both fixed: (a) the per-frame point-reflow lerp used a flat, frame-count-based factor instead of a `dt`-scaled one, so it converged far too slowly whenever the actual frame rate dropped — a genuine, independently-real robustness bug, not just a symptom of this sandbox's software renderer; (b) `applyQueryLayout` barely relocated matched points at all. Rewrote it so matches resolve onto a compact, individually-legible grid directly in front of the query-framing camera while non-matches are pushed onto a distant shell — verified via before/after screenshot that 240 real query matches are now clearly legible and separated from dimmed, receded non-matches.
+- **Relationship threads had no 3D visualization at all** — only `IdentityPanel`'s text list existed; `WorldCanvas.tsx` never drew the curved connecting lines the design specifies. Added a `threadGroup` using the same real `computeRelationshipThreads()` signal the panel already calls, drawing colored curved lines + endpoint dots from the selection marker to each related protein's real position. Verified visually with a real selected protein (ALOX15/P39654) showing 3 real "Shared classification" threads.
+- **"Neighbourhood level is useless."** Per the design, Neighbourhood is correctly not a separate navigable `SceneMode` (confirmed: the Depth Rail's Neighbourhood entry is deliberately inert by design) — but production had nothing filling the *interaction* the design specifies for it ("local groups/hero labels resolve into view as camera moves"). Added a pooled, throttled nearest-protein label system inside Territory mode; verified two real protein name labels resolving into view after entering a territory.
+- **Persistent ambient sound (new capability, explicit user request).** `SOUND_SPEC.md` explicitly forbids ambience. The user directly asked for an ambient option during live testing. Added a second, independent, off-by-default `AMBIENT` toggle (a very quiet generative two-oscillator drone, `src/hooks/useSound.ts`) alongside the untouched discrete cue-sound toggle. Recorded as `DESIGN_DELTA.md` item 7 — the reconciliation rule defers to a direct, live human instruction over the written spec here.
+- **Protein-design journey undiscoverable.** Only UniProt A5F934/PDB 6EHB carries a real precomputed design trajectory; nothing pointed a user toward it. Added a "protein design example" Query-bar suggestion chip that searches the exact accession. Verified the entire path end-to-end: search → select → Glance → Inspect → Design panel showing real 6EHB provenance and the continuous 6-beat playback.
+- Updated the `CameraEngine` unit test asserting the old literal r:640 home framing to the new, intentional r:900.
+
+**Diagnostic method, not guessing**
+Every fix above was root-caused before being patched — e.g. the "3 FPS" reading during investigation was confirmed via `WEBGL_debug_renderer_info` to be this sandbox's software (SwiftShader) WebGL rasterizer, not a code regression, so no code was changed purely to move that number; the reflow-timing fix was made because a flat per-frame factor is independently a real bug on any slow frame rate, which happened to also be what made the diagnosis legible in this environment.
+
+**Validation**
+- `npm run typecheck`, `npm run lint`, `npm test` (26/26, including the updated camera home-framing test) — pass.
+- `npm run build` — pass.
+- `npm run test:e2e` — 7/7 Playwright tests pass against the rebuilt production build.
+- Scripted Playwright verification (screenshotted) of all 10 fixes above at 1920×1080, both themes: Universe arrival composition, territory entry + neighbourhood labels, dark-mode point rendering, query legibility, thread-line rendering with a real protein, and the full design-journey path.
+
+**Git**
+- Branch: `claude/final-implementation`.
+- PR: #11, draft, targeting `integration/claude-handoff`.
+
+**Codex**
+- Session ID: Pending (/feedback)
+
+**Next**
+See `docs/handoff/CURRENT_STATE.md` "Exact next task" — automated reduced-motion/2560×1440 e2e coverage, a credentialed Ask Atlas run if `OPENAI_API_KEY` becomes available, and a screen-space label-collision pass for the remaining `DESIGN_DELTA.md` item 3.
+
+---
+
 ## 2026-07-20T05:40:00+01:00 - Functional-completion closeout
 
 **Phase:** Validation and publication

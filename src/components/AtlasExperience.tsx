@@ -260,7 +260,14 @@ export function AtlasExperience() {
   const showQuery = !loaderVisible && (state.mode === "universe" || state.mode === "territory") && !commandOpen;
   const territoryLabel = state.territoryId ? territories.find((t) => t.id === state.territoryId)?.label ?? null : null;
   const canDesign = !!selectedProtein && selectedProtein.id === "A5F934";
-  const structureDomains = detail.status === "available" ? detail.data.domains.map((domain, index) => ({ label: domain.label, start: domain.start, end: domain.end, color: domainColorHex(index) })) : [];
+  // Memoized on `detail` (stable unless the resolved UniProt record actually changes) so this
+  // array keeps referential identity across unrelated re-renders (e.g. the once-a-second FPS
+  // counter update) — StructureView's Mol* mount effect depends on it, and an unstable
+  // reference here was re-mounting the entire Mol* plugin on every re-render.
+  const structureDomains = useMemo(
+    () => (detail.status === "available" ? detail.data.domains.map((domain, index) => ({ label: domain.label, start: domain.start, end: domain.end, color: domainColorHex(index) })) : []),
+    [detail],
+  );
   const showAskAtlas = !loaderVisible;
   const navHint = state.mode === "universe" ? "DRAG ORBIT · RIGHT/SHIFT-DRAG PAN · SCROLL ZOOM · DOUBLE-CLICK FOCUS" : "ESC RETURNS ONE LEVEL";
 
@@ -298,7 +305,7 @@ export function AtlasExperience() {
       <div className="hx-scrim-bot" />
       <div className="hx-vignette" />
 
-      <Header theme={theme} releaseLabel={releaseLabel} soundOn={sound.enabled} onToggleSound={sound.toggle} onToggleTheme={toggleTheme} onHome={returnHome} />
+      <Header theme={theme} releaseLabel={releaseLabel} soundOn={sound.enabled} onToggleSound={sound.toggle} ambientOn={sound.ambientOn} onToggleAmbient={sound.toggleAmbient} onToggleTheme={toggleTheme} onHome={returnHome} />
       <DepthRail
         mode={state.mode}
         visible={!loaderVisible}

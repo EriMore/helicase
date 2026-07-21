@@ -179,9 +179,11 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
 .hx-label-name { font-size: 16px; margin-top: 2px; }
 .hx-label-enter { font-size: 8px; letter-spacing: .1em; color: var(--teal); margin-top: 2px; opacity: 0; transition: opacity .2s; }
 .hx-label-territory:hover .hx-label-enter { opacity: 1; }
-.hx-label-hero { transform: translate(-50%, -150%); pointer-events: none; }
+.hx-label-hero { transform: translate(-50%, -150%); pointer-events: none; max-width: 260px; }
 .hx-label-hero-id { font-size: 9px; letter-spacing: .16em; color: var(--ink-faint); }
-.hx-label-hero-name { font-size: 12px; margin-top: 1px; color: var(--ink); }
+.hx-label-hero-name { font-size: 12px; margin-top: 1px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hx-label-neighbour { z-index: 5; }
+.hx-label-neighbour .hx-label-hero-name { font-size: 11px; }
 
 .hx-scrim-top { position: absolute; top: 0; left: 0; right: 0; height: 150px; pointer-events: none; background: var(--scrim-top); z-index: 8; }
 .hx-scrim-bot { position: absolute; bottom: 0; left: 0; right: 0; height: 120px; pointer-events: none; background: var(--scrim-bot); z-index: 8; }
@@ -219,8 +221,12 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
 /* ---------------------------------------------------------
    Query bar
    --------------------------------------------------------- */
-.hx-query-wrap { position: absolute; top: 78px; left: 50%; transform: translateX(-50%); width: min(660px, 66vw); z-index: 22; animation: hx-rise .5s ease both; }
-.hx-query { border-radius: 3px; padding: 11px 16px; }
+/* pointer-events:none on the wrapper so empty flex-gap space doesn't swallow
+   clicks meant for territory labels that project underneath it — only the
+   actual glass panel and chip buttons (given their own pointer-events:auto
+   below) are interactive. */
+.hx-query-wrap { position: absolute; top: 78px; left: 50%; transform: translateX(-50%); width: min(660px, 66vw); z-index: 22; animation: hx-rise .5s ease both; pointer-events: none; }
+.hx-query { border-radius: 3px; padding: 11px 16px; pointer-events: auto; }
 .hx-query-row { display: flex; align-items: center; gap: 14px; }
 .hx-query-label { font-size: 9.5px; letter-spacing: .26em; color: var(--ink-soft); white-space: nowrap; }
 .hx-query-input { flex: 1; border: 0; background: none; outline: 0; font-family: var(--font-spectral), serif; font-size: 16px; color: var(--ink); caret-color: var(--teal); }
@@ -232,7 +238,7 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
 .hx-query-filter-chip { font-size: 9px; letter-spacing: .06em; color: var(--ink); border: 1px solid var(--teal); padding: 3px 8px; border-radius: 2px; }
 .hx-query-zero { font-size: 9px; letter-spacing: .06em; color: var(--ink-faint); }
 .hx-suggestions { display: flex; gap: 8px; margin-top: 11px; flex-wrap: wrap; justify-content: center; }
-.hx-suggestion-chip { font-size: 9.5px; letter-spacing: .08em; color: var(--ink-soft); padding: 6px 11px; }
+.hx-suggestion-chip { font-size: 9.5px; letter-spacing: .08em; color: var(--ink-soft); padding: 6px 11px; pointer-events: auto; }
 
 /* ---------------------------------------------------------
    Identity panel — Glance / Learn

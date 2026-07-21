@@ -4,7 +4,8 @@ import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import type { SceneState } from "@/domain/atlas";
 import type { AtlasProtein } from "@/domain/atlas-data";
-import { territories, territoryCenter, territoryIndexForRegion } from "@/domain/territories";
+import { territories, territoryCenter, territoryIndexForRegion, worldPosition } from "@/domain/territories";
+import { computeRelationshipThreads } from "@/domain/relationships";
 import { CAMERA_FAR, CAMERA_FOV, CAMERA_NEAR, CameraEngine, TWEEN_MS } from "@/engine/camera-navigation";
 
 export type Theme = "light" | "dark";
@@ -14,6 +15,9 @@ const THEME_TABLE: Record<Theme, { fam: string[]; teal: string; fog: string; fog
   light: { fam: ["#3c5a86", "#8f4a44", "#3f6f60", "#9a7a34", "#6a4a70", "#4a4f57"], teal: "#0c8c78", fog: "#efece4", fogNear: 300, fogFar: 1200, size: 22, additive: false, dimNon: 0.30 },
   dark: { fam: ["#7d97d0", "#d68b83", "#5fc6a6", "#d9b96e", "#b490c8", "#9aa2b0"], teal: "#34d6b8", fog: "#0d1013", fogNear: 440, fogFar: 2400, size: 26, additive: true, dimNon: 0.26 },
 };
+const THREAD_COLOR: Record<string, string> = { "Shared family": "#b07b3a", "Shared classification": "#7a6a9c" };
+const NEIGHBOUR_LABEL_POOL = 14;
+const NEIGHBOUR_RADIUS = 190;
 
 const pointVertexShader = `
 attribute vec3 color;
@@ -46,6 +50,9 @@ void main() {
   c = mix(c, uFog, vFog * fogMix);
   float alpha = a;
   alpha *= mix(1.0, 1.0 - vFog * 0.82, step(uTheme, 0.5));
+  // Additive dark-mode blending saturates to white at 75,000-point density —
+  // dampen per-point alpha so overlapping points glow without blowing out.
+  alpha *= mix(1.0, 0.42, step(0.5, uTheme));
   alpha *= uDim;
   alpha *= mix(uDimNon, 1.0, vMatch);
   if (uTerritoryFocus > 0.5) { float m = abs(vTerritory - uActiveTerritory) < 0.5 ? 1.0 : uDimNon; alpha *= m; }
@@ -56,9 +63,9 @@ type ThreeRefs = {
   renderer: THREE.WebGLRenderer; sceneObj: THREE.Scene; camera: THREE.PerspectiveCamera;
   points: THREE.Points; geometry: THREE.BufferGeometry; material: THREE.ShaderMaterial;
   base: Float32Array; target: Float32Array; territoryIndex: Int16Array;
-  marker: THREE.Sprite; raycaster: THREE.Raycaster;
+  marker: THREE.Sprite; raycaster: THREE.Raycaster; threadGroup: THREE.Group;
   proteinList: AtlasProtein[];
-  reflow: { active: boolean };
+  threadKey: string;
 };
 
 function makeBracketTexture(): THREE.CanvasTexture {
@@ -91,6 +98,7 @@ export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTe
   const labelsWrap = useRef<HTMLDivElement>(null);
   const territoryLabelEls = useRef<HTMLDivElement[]>([]);
   const hoverLabelEl = useRef<HTMLDivElement | null>(null);
+  const neighbourLabelEls = useRef<HTMLDivElement[]>([]);
 
   const engine = useRef(new CameraEngine());
   const sceneRef = useRef(scene);
@@ -120,7 +128,8 @@ export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTe
     const highlighted = new Set(sceneRef.current.queryResultIds);
     const activeTerritory = territories.findIndex((territory) => territory.id === sceneRef.current.territoryId);
     proteins.forEach((protein, index) => {
-      base[index * 3] = protein.position[0]; base[index * 3 + 1] = protein.position[1]; base[index * 3 + 2] = protein.position[2];
+      const [wx, wy, wz] = worldPosition(protein.position);
+      base[index * 3] = wx; base[index * 3 + 1] = wy; base[index * 3 + 2] = wz;
       const territoryIdx = territoryIndexForRegion(protein.region);
       territoryIndex[index] = territoryIdx;
       const c = new THREE.Color(table.fam[territoryIdx]);
@@ -194,7 +203,7 @@ export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTe
       cam.captureLevel(scene.territoryId ? "territory" : "universe");
       const protein = t.proteinList.find((candidate) => candidate.id === scene.selectedProteinId);
       if (protein) {
-        const point = new THREE.Vector3(...protein.position);
+        const point = new THREE.Vector3(...worldPosition(protein.position));
         t.marker.position.copy(point); t.marker.visible = true;
         cam.applyTarget({ target: point, r: 150, theta: cam.cam.theta, phi: 1.05 }, TWEEN_MS.selectProtein);
       }
@@ -234,11 +243,11 @@ export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTe
         let sumX = 0, sumY = 0, sumZ = 0, matched = 0;
         t.proteinList.forEach((protein, index) => { if (matches.has(protein.id)) { sumX += t.target[index * 3]; sumY += t.target[index * 3 + 1]; sumZ += t.target[index * 3 + 2]; matched += 1; } });
         const center = matched ? new THREE.Vector3(sumX / matched, sumY / matched, sumZ / matched) : new THREE.Vector3();
-        cam.applyTarget({ target: center, r: 380, theta: 0.4, phi: 1.12 }, TWEEN_MS.queryMatch);
+        cam.applyTarget({ target: center, r: 340, theta: 0.4, phi: 1.12 }, TWEEN_MS.queryMatch);
       }
     } else if (command === "CLEAR_QUERY") {
       applyQueryLayout(t, new Set());
-      cam.applyTarget({ target: new THREE.Vector3(0, 0, 0), r: 600, theta: cam.cam.theta, phi: 1.12 }, TWEEN_MS.clearQuery);
+      cam.applyTarget({ target: new THREE.Vector3(0, 0, 0), r: 900, theta: cam.cam.theta, phi: 1.12 }, TWEEN_MS.clearQuery);
     }
   }, [scene.lastCommand, scene.mode, scene.territoryId, scene.selectedProteinId, scene.queryResultIds]);
 
@@ -276,10 +285,13 @@ export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTe
     marker.visible = false;
     sceneObj.add(marker);
 
+    const threadGroup = new THREE.Group();
+    sceneObj.add(threadGroup);
+
     const raycaster = new THREE.Raycaster();
     raycaster.params.Points = { threshold: 2.6 };
 
-    three.current = { renderer, sceneObj, camera, points, geometry: points.geometry, material, base: new Float32Array(0), target: new Float32Array(0), territoryIndex: new Int16Array(0), marker, raycaster, proteinList: [], reflow: { active: false } };
+    three.current = { renderer, sceneObj, camera, points, geometry: points.geometry, material, base: new Float32Array(0), target: new Float32Array(0), territoryIndex: new Int16Array(0), marker, raycaster, threadGroup, proteinList: [], threadKey: "" };
 
     const pointer = new THREE.Vector2();
     let pointerDown = false; let panning = false; let moved = 0; let lastX = 0; let lastY = 0; let hoveredId: string | null = null; let moveThrottle = 0;
@@ -296,7 +308,7 @@ export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTe
     const pickProtein = (): AtlasProtein | null => {
       if (sceneRef.current.mode !== "universe" && sceneRef.current.mode !== "territory") return null;
       raycaster.setFromCamera(pointer, camera);
-      raycaster.params.Points!.threshold = engine.current.now.r * 0.02;
+      raycaster.params.Points!.threshold = Math.max(2.6, engine.current.now.r * 0.02);
       const hit = raycaster.intersectObject(points, false)[0];
       return hit?.index != null ? three.current!.proteinList[hit.index] ?? null : null;
     };
@@ -364,7 +376,7 @@ export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTe
     };
     window.addEventListener("resize", onResize);
 
-    let animationFrame = 0; let lastTime = performance.now(); let metricFrames = 0; let metricStart = performance.now();
+    let animationFrame = 0; let lastTime = performance.now(); let metricFrames = 0; let metricStart = performance.now(); let neighbourFrame = 0;
     const render = () => {
       const now = performance.now();
       const dt = Math.min((now - lastTime) / 1000, 0.05);
@@ -385,10 +397,13 @@ export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTe
         const positionAttr = t.points.geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
         if (positionAttr) {
           const array = positionAttr.array as Float32Array;
+          // Frame-rate independent: a flat per-frame factor would converge far too
+          // slowly whenever the actual frame rate drops well below 60fps.
+          const reflowFactor = 1 - Math.exp(-dt * 6.5);
           let changed = false;
           for (let i = 0; i < array.length; i += 1) {
             const delta = t.target[i] - array[i];
-            if (Math.abs(delta) > 0.001) { array[i] += delta * 0.08; changed = true; }
+            if (Math.abs(delta) > 0.001) { array[i] += delta * reflowFactor; changed = true; }
           }
           if (changed) positionAttr.needsUpdate = true;
         }
@@ -397,10 +412,29 @@ export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTe
           t.marker.scale.setScalar(distance * 0.09);
           t.marker.material.opacity = 0.7 + Math.sin(now * 0.004) * 0.3;
         }
+
+        // Relationship threads: rebuild only when the selection/toggle actually changes.
+        const showThreads = currentScene.mode === "glance" && currentScene.threadsOn && !!currentScene.selectedProteinId;
+        const threadKey = showThreads ? `${currentScene.selectedProteinId}` : "";
+        if (threadKey !== t.threadKey) {
+          rebuildThreadGroup(t, showThreads ? currentScene.selectedProteinId : null);
+          t.threadKey = threadKey;
+        }
+        const threadTargetOpacity = showThreads ? 1 : 0;
+        t.threadGroup.children.forEach((child) => {
+          const material2 = (child as THREE.Line | THREE.Mesh).material as THREE.Material & { opacity: number };
+          material2.opacity += (threadTargetOpacity * (material2.userData.baseOpacity ?? 1) - material2.opacity) * 0.15;
+        });
+
+        // Neighbourhood resolution: as the camera nears a territory, surface nearby protein labels.
+        neighbourFrame += 1;
+        if (neighbourFrame % 10 === 0) {
+          updateNeighbourLabels(t, currentScene, engine.current, neighbourLabelEls.current);
+        }
       }
 
       renderer.render(sceneObj, camera);
-      projectLabels(camera, mount, engine.current, territoryLabelEls.current, currentScene, hoveredId, proteinsRef.current, hoverLabelEl.current);
+      projectLabels(camera, mount, territoryLabelEls.current, currentScene, hoveredId, proteinsRef.current, hoverLabelEl.current, neighbourLabelEls.current);
 
       metricFrames += 1;
       if (now - metricStart >= 1000) {
@@ -421,6 +455,7 @@ export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTe
       renderer.domElement.removeEventListener("wheel", onWheel);
       renderer.domElement.removeEventListener("contextmenu", onContextMenu);
       points.geometry.dispose(); material.dispose();
+      disposeThreadGroup(threadGroup);
       (marker.material as THREE.SpriteMaterial).map?.dispose();
       (marker.material as THREE.Material).dispose();
       renderer.dispose();
@@ -444,6 +479,12 @@ export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTe
         <div className="hx-label-name serif">{territory.label}</div>
         <div className="hx-label-enter mono">ENTER ›</div>
       </div>)}
+      {Array.from({ length: NEIGHBOUR_LABEL_POOL }).map((_, index) => (
+        <div key={index} ref={(el) => { if (el) neighbourLabelEls.current[index] = el; }} className="hx-label hx-label-hero hx-label-neighbour" style={{ display: "none" }}>
+          <div className="hx-label-hero-id mono" />
+          <div className="hx-label-hero-name serif" />
+        </div>
+      ))}
       <div ref={hoverLabelEl} className="hx-label hx-label-hero" style={{ display: "none" }}>
         <div className="hx-label-hero-id mono" />
         <div className="hx-label-hero-name serif" />
@@ -468,24 +509,121 @@ function applyTerritoryLayout(t: ThreeRefs, activeTerritory: number) {
   t.material.uniforms.uTerritoryFocus.value = activeTerritory >= 0 ? 1 : 0;
 }
 
+const QUERY_PULL = new THREE.Vector3(0, 30, 460);
+const QUERY_SPACING = 58;
+const QUERY_PER_ROW = 9;
+const QUERY_SHELL_RADIUS = 980;
+
+/**
+ * Matches resolve onto a compact, individually legible grid right in front of
+ * the query-framing camera; everything else is pushed onto a distant shell so
+ * it reads as receded aggregate context, not a wall obscuring the results.
+ */
 function applyQueryLayout(t: ThreeRefs, matches: Set<string>) {
   const matchAttr = t.points.geometry.getAttribute("aMatch") as THREE.BufferAttribute | undefined;
+  if (matches.size === 0) {
+    for (let index = 0; index < t.proteinList.length; index += 1) {
+      if (matchAttr) matchAttr.setX(index, 0);
+      t.target[index * 3] = t.base[index * 3]; t.target[index * 3 + 1] = t.base[index * 3 + 1]; t.target[index * 3 + 2] = t.base[index * 3 + 2];
+    }
+    if (matchAttr) matchAttr.needsUpdate = true;
+    return;
+  }
+  const matchIndices: number[] = [];
   for (let index = 0; index < t.proteinList.length; index += 1) {
     const isMatch = matches.has(t.proteinList[index].id);
     if (matchAttr) matchAttr.setX(index, isMatch ? 1 : 0);
-    if (matches.size === 0) { t.target[index * 3] = t.base[index * 3]; t.target[index * 3 + 1] = t.base[index * 3 + 1]; t.target[index * 3 + 2] = t.base[index * 3 + 2]; continue; }
-    if (isMatch) {
-      t.target[index * 3] = t.base[index * 3]; t.target[index * 3 + 1] = t.base[index * 3 + 1] + 10; t.target[index * 3 + 2] = t.base[index * 3 + 2] * 0.4;
-    } else {
-      const length = Math.hypot(t.base[index * 3], t.base[index * 3 + 1], t.base[index * 3 + 2]) || 1;
-      const push = 130 / length;
-      t.target[index * 3] = t.base[index * 3] * (1 + push); t.target[index * 3 + 1] = t.base[index * 3 + 1] * (1 + push); t.target[index * 3 + 2] = t.base[index * 3 + 2] * (1 + push);
-    }
+    if (isMatch) matchIndices.push(index);
+  }
+  const rows = Math.ceil(matchIndices.length / QUERY_PER_ROW);
+  matchIndices.forEach((index, order) => {
+    const row = Math.floor(order / QUERY_PER_ROW);
+    const col = order % QUERY_PER_ROW;
+    const rowCount = Math.min(QUERY_PER_ROW, matchIndices.length - row * QUERY_PER_ROW);
+    t.target[index * 3] = QUERY_PULL.x + (col - (rowCount - 1) / 2) * QUERY_SPACING;
+    t.target[index * 3 + 1] = QUERY_PULL.y + ((rows - 1) / 2 - row) * QUERY_SPACING;
+    t.target[index * 3 + 2] = QUERY_PULL.z;
+  });
+  for (let index = 0; index < t.proteinList.length; index += 1) {
+    if (matches.has(t.proteinList[index].id)) continue;
+    const bx = t.base[index * 3], by = t.base[index * 3 + 1], bz = t.base[index * 3 + 2];
+    const length = Math.hypot(bx, by, bz) || 1;
+    const shellScale = QUERY_SHELL_RADIUS / length;
+    t.target[index * 3] = bx * shellScale; t.target[index * 3 + 1] = by * shellScale; t.target[index * 3 + 2] = bz * shellScale;
   }
   if (matchAttr) matchAttr.needsUpdate = true;
 }
 
-function projectLabels(camera: THREE.PerspectiveCamera, mount: HTMLDivElement, cameraEngine: CameraEngine, territoryEls: HTMLDivElement[], scene: SceneState, hoveredId: string | null, proteins: AtlasProtein[], hoverLabel: HTMLDivElement | null) {
+function rebuildThreadGroup(t: ThreeRefs, selectedProteinId: string | null) {
+  disposeThreadChildren(t.threadGroup);
+  if (!selectedProteinId) return;
+  const selected = t.proteinList.find((protein) => protein.id === selectedProteinId);
+  if (!selected) return;
+  const threads = computeRelationshipThreads(selected, t.proteinList, 3);
+  const from = new THREE.Vector3(...worldPosition(selected.position));
+  threads.forEach((thread, index) => {
+    const to = new THREE.Vector3(...worldPosition(thread.protein.position));
+    const mid = from.clone().add(to).multiplyScalar(0.5);
+    mid.y += 30 + index * 10;
+    const curve = new THREE.QuadraticBezierCurve3(from, mid, to);
+    const colorHex = THREAD_COLOR[thread.type] ?? "#888888";
+    const lineGeometry = new THREE.BufferGeometry().setFromPoints(curve.getPoints(48));
+    const lineMaterial = new THREE.LineBasicMaterial({ color: colorHex, transparent: true, opacity: 0 });
+    lineMaterial.userData.baseOpacity = 0.75;
+    const line = new THREE.Line(lineGeometry, lineMaterial);
+    t.threadGroup.add(line);
+    const dotMaterial = new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 0 });
+    dotMaterial.userData.baseOpacity = 1;
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(3.2, 12, 12), dotMaterial);
+    dot.position.copy(to);
+    t.threadGroup.add(dot);
+  });
+}
+
+function disposeThreadChildren(group: THREE.Group) {
+  while (group.children.length) {
+    const child = group.children.pop()!;
+    (child as THREE.Line | THREE.Mesh).geometry?.dispose();
+    ((child as THREE.Line | THREE.Mesh).material as THREE.Material)?.dispose();
+  }
+}
+
+function disposeThreadGroup(group: THREE.Group) {
+  disposeThreadChildren(group);
+}
+
+function updateNeighbourLabels(t: ThreeRefs, scene: SceneState, cameraEngine: CameraEngine, els: HTMLDivElement[]) {
+  if (scene.mode !== "territory" || cameraEngine.now.r > NEIGHBOUR_RADIUS * 2.4) {
+    els.forEach((el) => { el.style.display = "none"; });
+    return;
+  }
+  const activeTerritory = territories.findIndex((territory) => territory.id === scene.territoryId);
+  if (activeTerritory < 0) { els.forEach((el) => { el.style.display = "none"; }); return; }
+  const targetX = cameraEngine.now.target.x, targetY = cameraEngine.now.target.y, targetZ = cameraEngine.now.target.z;
+  const nearby: Array<{ index: number; distSq: number }> = [];
+  for (let index = 0; index < t.proteinList.length; index += 1) {
+    if (t.territoryIndex[index] !== activeTerritory) continue;
+    const dx = t.target[index * 3] - targetX, dy = t.target[index * 3 + 1] - targetY, dz = t.target[index * 3 + 2] - targetZ;
+    const distSq = dx * dx + dy * dy + dz * dz;
+    if (distSq < NEIGHBOUR_RADIUS * NEIGHBOUR_RADIUS) nearby.push({ index, distSq });
+  }
+  nearby.sort((a, b) => a.distSq - b.distSq);
+  const picked = nearby.slice(0, els.length);
+  els.forEach((el, slot) => {
+    const entry = picked[slot];
+    if (!entry) { el.style.display = "none"; return; }
+    const protein = t.proteinList[entry.index];
+    el.dataset.px = String(t.target[entry.index * 3]);
+    el.dataset.py = String(t.target[entry.index * 3 + 1]);
+    el.dataset.pz = String(t.target[entry.index * 3 + 2]);
+    const idEl = el.querySelector(".hx-label-hero-id"); if (idEl) idEl.textContent = protein.id;
+    const nameEl = el.querySelector(".hx-label-hero-name"); if (nameEl) nameEl.textContent = protein.name;
+    el.dataset.armed = "1";
+  });
+  for (let slot = picked.length; slot < els.length; slot += 1) els[slot].dataset.armed = "0";
+}
+
+function projectLabels(camera: THREE.PerspectiveCamera, mount: HTMLDivElement, territoryEls: HTMLDivElement[], scene: SceneState, hoveredId: string | null, proteins: AtlasProtein[], hoverLabel: HTMLDivElement | null, neighbourEls: HTMLDivElement[]) {
   const width = mount.clientWidth; const height = mount.clientHeight;
   const showTerritories = scene.mode === "universe" || scene.mode === "territory";
   const projected = new THREE.Vector3();
@@ -504,10 +642,18 @@ function projectLabels(camera: THREE.PerspectiveCamera, mount: HTMLDivElement, c
       el.style.display = "none";
     }
   });
+  neighbourEls.forEach((el) => {
+    if (el.dataset.armed !== "1") { el.style.display = "none"; return; }
+    projected.set(Number(el.dataset.px), Number(el.dataset.py), Number(el.dataset.pz)).project(camera);
+    if (projected.z >= 1 || Math.abs(projected.x) > 1.05 || Math.abs(projected.y) > 1.05) { el.style.display = "none"; return; }
+    el.style.left = `${(projected.x * 0.5 + 0.5) * width}px`;
+    el.style.top = `${(-projected.y * 0.5 + 0.5) * height}px`;
+    el.style.display = "block";
+  });
   if (hoverLabel) {
     const protein = hoveredId ? proteins.find((candidate) => candidate.id === hoveredId) ?? null : null;
     if (protein && (scene.mode === "universe" || scene.mode === "territory")) {
-      projected.set(...protein.position).project(camera);
+      projected.set(...worldPosition(protein.position)).project(camera);
       if (projected.z < 1) {
         hoverLabel.style.left = `${(projected.x * 0.5 + 0.5) * width}px`;
         hoverLabel.style.top = `${(-projected.y * 0.5 + 0.5) * height}px`;
@@ -517,5 +663,4 @@ function projectLabels(camera: THREE.PerspectiveCamera, mount: HTMLDivElement, c
       } else hoverLabel.style.display = "none";
     } else hoverLabel.style.display = "none";
   }
-  void cameraEngine;
 }

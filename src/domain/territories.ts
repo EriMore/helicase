@@ -19,6 +19,20 @@ export const territories = [
 
 export type TerritoryId = (typeof territories)[number]["id"];
 
+/**
+ * The real corpus's annotation-family hierarchy (spatialization.ts) places region
+ * centers within roughly ±100 units of the origin — a coordinate system inherited
+ * from the pre-Claude-Design engine's much tighter camera clamp (r ∈ [8,520]).
+ * The design's camera contract (MOTION_AND_CAMERA_SPEC.md) uses much larger,
+ * fixed r values (640 arrival, 260 territory-enter, ...) tuned against the
+ * prototype's own much larger synthetic point field. Rather than compress the
+ * design's camera numbers to fit, every world-space position is scaled up by this
+ * factor at the render boundary (WorldCanvas) so the two contracts agree — a
+ * presentation-layer transform only; it never touches the underlying data files
+ * or their real semantic coordinates.
+ */
+export const WORLD_SCALE = 6;
+
 const regionToTerritory = new Map<string, number>();
 territories.forEach((territory, index) => territory.regions.forEach((region) => regionToTerritory.set(region, index)));
 
@@ -28,11 +42,17 @@ export function territoryIndexForRegion(regionId: string): number {
   return regionToTerritory.get(regionId) ?? territories.length - 1;
 }
 
+/** World-space (scaled) center — use for camera targeting and rendering. */
 export function territoryCenter(territoryIndex: number): [number, number, number] {
   const territory = territories[territoryIndex];
   const centers = territory.regions.map((region) => regionCenters.get(region) ?? [0, 0, 0]);
   const sum = centers.reduce((total, center) => [total[0] + center[0], total[1] + center[1], total[2] + center[2]], [0, 0, 0]);
-  return [sum[0] / centers.length, sum[1] / centers.length, sum[2] / centers.length];
+  return [(sum[0] / centers.length) * WORLD_SCALE, (sum[1] / centers.length) * WORLD_SCALE, (sum[2] / centers.length) * WORLD_SCALE];
+}
+
+/** Convert a real protein's raw data-space position into the same scaled world space as territoryCenter(). */
+export function worldPosition(position: readonly [number, number, number]): [number, number, number] {
+  return [position[0] * WORLD_SCALE, position[1] * WORLD_SCALE, position[2] * WORLD_SCALE];
 }
 
 export function territoryByRegion(regionId: string) {

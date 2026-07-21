@@ -2,7 +2,13 @@
 
 import { type FormEvent, useRef } from "react";
 
-const SUGGESTIONS = ["membrane receptors", "oxygen transport", "muscle proteins", "fluorescent proteins"];
+const SUGGESTIONS = [
+  { label: "membrane receptors", query: "membrane receptors" },
+  { label: "oxygen transport", query: "oxygen transport" },
+  { label: "muscle proteins", query: "muscle proteins" },
+  { label: "fluorescent proteins", query: "fluorescent proteins" },
+  { label: "protein design example", query: "A5F934" },
+];
 
 type QueryBarProps = {
   visible: boolean;
@@ -51,7 +57,7 @@ export function QueryBar({ visible, query, onQueryChange, onSubmit, onClear, act
       {!active && (
         <div className="hx-suggestions">
           {SUGGESTIONS.map((suggestion) => (
-            <button key={suggestion} className="hx-suggestion-chip hx-glass mono" onClick={() => { onQueryChange(suggestion); onSubmit(suggestion); }}>{suggestion}</button>
+            <button key={suggestion.label} className="hx-suggestion-chip hx-glass mono" onClick={() => { onQueryChange(suggestion.query); onSubmit(suggestion.query); }}>{suggestion.label}</button>
           ))}
         </div>
       )}

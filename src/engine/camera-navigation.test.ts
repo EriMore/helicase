@@ -71,9 +71,12 @@ describe("CameraEngine", () => {
   });
 
   it("falls back to the default home framing when no universe snapshot exists", () => {
+    // r:900 (not the design spec's literal 640) — the real corpus's six territories
+    // are unevenly sized, so arrival needs more headroom than the prototype's evenly
+    // sized synthetic dataset did. See docs/handoff/DESIGN_DELTA.md.
     const engine = new CameraEngine();
     engine.goHome();
-    expect(engine.cam.r).toBe(640);
+    expect(engine.cam.r).toBe(900);
     expect(engine.cam.phi).toBeCloseTo(1.12, 5);
   });
 });
