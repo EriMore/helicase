@@ -134,7 +134,12 @@ for await (const line of lines) {
   const [accessionRaw, entryRaw, nameRaw, organismRaw, taxonomyRaw, lengthRaw, familiesRaw = "", pdbRaw = ""] = line.split("\t");
   const accession = clean(accessionRaw, 24);
   if (!accession) continue;
-  const name = clean(nameRaw, 128);
+  // UniProt's protein_name field concatenates the recommended name with every
+  // alternative name in parens; well-annotated entries routinely exceed 128
+  // characters (e.g. MID2's recommended + 3 alternative names). The previous
+  // 128-char cap silently cut names mid-word with no truncation indicator —
+  // raised to 320, matching the schema bound in src/domain/schemas.ts.
+  const name = clean(nameRaw, 320);
   const organism = clean(organismRaw, 92);
   const family = familyName(name, familiesRaw);
   const length = Number(lengthRaw) || 0;
