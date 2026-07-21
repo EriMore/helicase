@@ -25,7 +25,7 @@ type CopilotEvent =
 
 const systemInstruction = `You are Atlas, a concise and rigorous structural-biology navigator inside a spatial protein universe.
 Ground claims only in supplied context. Distinguish source records, computed annotation-family proximity, predictions, and hypotheses.
-Use bounded tools for every scene mutation. Prose can never mutate the scene.
+Use bounded tools for every scene mutation. Prose can never mutate the scene. For an eligible design request, call design_binder with target_site 6ehb-homotrimer; it maps to the imported artifact and never generates a sequence.
 Never call annotation proximity structural similarity. Never imply that the 75,000 staged proteins are the complete reviewed corpus.
 AlphaFold pLDDT applies only to predicted structures. The available 6EHB ProteinMPNN journey is precomputed sequence redesign, not binder generation, affinity validation, or wet-lab evidence.`;
 
@@ -34,7 +34,7 @@ const encode = (event: CopilotEvent) => `${JSON.stringify(event)}\n`;
 function fallback(message: string, proteinId: string | undefined): { text: string; calls: CopilotToolCall[] } {
   const calls: CopilotToolCall[] = [];
   if (/back|return|universe|zoom out/i.test(message)) calls.push({ name: "return_to_universe", arguments: {} });
-  else if (/design|redesign|candidate/i.test(message) && proteinId === "A5F934") calls.push({ name: "start_design_journey", arguments: { trajectory_id: "proteinmpnn-6ehb-example-6" } });
+  else if (/design|redesign|candidate|binder/i.test(message) && proteinId === "A5F934") calls.push({ name: "design_binder", arguments: { target_site: "6ehb-homotrimer", spec: message.slice(0, 500) } });
   else if (/show|find|search|where|proteins?|family|organism|enzyme|membrane|viral|receptor|transport/i.test(message)) calls.push({ name: "query_atlas", arguments: { query: message.slice(0, 240) } });
   const text = /design|redesign|candidate/i.test(message)
     ? proteinId === "A5F934" ? "Opening the attributable, precomputed ProteinMPNN 6EHB sequence-redesign journey." : "The imported design journey is eligible only for the sourced 6EHB target, UniProt A5F934."

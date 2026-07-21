@@ -43,6 +43,7 @@ export function AtlasExperience() {
   const confidence = useStructureConfidence(selectedProtein?.structure ?? null);
   const structureMetadata = useStructureMetadata(selectedProtein?.structure ?? null);
   const design = useDesignTrajectory(selectedProtein?.id === "A5F934");
+  const designStageCount = design.status === "available" ? design.data.stages.length : 0;
 
   const issue = (command: SceneCommand) => {
     const parsed = sceneCommandSchema.safeParse(command);
@@ -61,6 +62,16 @@ export function AtlasExperience() {
     const timer = window.setTimeout(() => issue({ type: "COLOR_BY", scheme: "confidence" }), 1180);
     return () => window.clearTimeout(timer);
   }, [state.mode]);
+
+  useEffect(() => {
+    if (state.mode !== "designing" || state.designPlayback !== "playing" || designStageCount === 0) return;
+    const lastStage = designStageCount - 1;
+    const timer = window.setInterval(() => {
+      if (state.designStageIndex >= lastStage) issue({ type: "PAUSE_DESIGN_TRAJECTORY" });
+      else issue({ type: "STEP_DESIGN_STAGE", direction: "forward" });
+    }, 2400);
+    return () => window.clearInterval(timer);
+  }, [state.mode, state.designPlayback, state.designStageIndex, designStageCount]);
 
   const runQuery = async (value: string) => {
     const nextQuery = value.trim();
@@ -105,6 +116,12 @@ export function AtlasExperience() {
       if (selectedProtein?.id !== "A5F934") throw new Error("The verified design journey requires selected target A5F934 / 6EHB.");
       launchDesign();
     }
+    if (tool.name === "design_binder") {
+      if (selectedProtein?.id !== "A5F934") throw new Error("This evidence-backed design path is only available for target A5F934 / 6EHB.");
+      launchDesign();
+    }
+    if (tool.name === "play_design_trajectory") { if (state.mode !== "designing") throw new Error("No design trajectory is active."); issue({ type: "PLAY_DESIGN_TRAJECTORY" }); }
+    if (tool.name === "pause_design_trajectory") issue({ type: "PAUSE_DESIGN_TRAJECTORY" });
     if (tool.name === "set_design_stage") {
       if (state.mode !== "designing") throw new Error("No design journey is active.");
       issue({ type: "SET_DESIGN_STAGE", stageIndex: tool.arguments.stage_index });
@@ -113,6 +130,11 @@ export function AtlasExperience() {
       if (state.mode !== "designing") throw new Error("No design journey is active.");
       issue({ type: "SELECT_DESIGN_CANDIDATE", candidateId: tool.arguments.candidate_id });
     }
+    if (tool.name === "compare_design_candidates") {
+      if (state.mode !== "designing" && state.mode !== "comparison") throw new Error("No design trajectory is active.");
+      issue({ type: "COMPARE_DESIGN_CANDIDATES", candidateIds: tool.arguments.candidate_ids });
+    }
+    if (tool.name === "return_to_design_target") issue({ type: "SET_DESIGN_STAGE", stageIndex: state.designStageIndex });
     if (tool.name === "focus_confidence_range") {
       if (confidence.status !== "available") throw new Error("Verified confidence is unavailable for this structure.");
       const ranges = tool.arguments.band === "very_high" ? confidence.data.ranges.veryHigh : tool.arguments.band === "confident" ? confidence.data.ranges.confident : tool.arguments.band === "low" ? confidence.data.ranges.low : confidence.data.ranges.veryLow;
@@ -188,7 +210,7 @@ export function AtlasExperience() {
 
   const universeMode = state.mode === "landing" || state.mode === "universe" || state.mode === "diving";
   const structureMode = !universeMode;
-  const designMode = state.mode === "designing" || state.mode === "designComplete";
+  const designMode = state.mode === "designing" || state.mode === "designComplete" || state.mode === "comparison";
   const loaderVisible = !minimumLoadComplete || !atlas.manifest;
   const coverageLabel = `${(atlas.addressableCount ?? atlas.manifest?.coverage.records ?? 0).toLocaleString()} reviewed proteins addressable · ${(atlas.manifest?.coverage.records ?? 0).toLocaleString()} staged locally`;
   const highlightedIds = useMemo(() => state.queryResultIds, [state.queryResultIds]);
@@ -296,13 +318,16 @@ export function AtlasExperience() {
       const selectedCandidate = stage.candidates.find((candidate) => candidate.id === state.selectedDesignCandidateId) ?? stage.candidates[0] ?? null;
       return <section className="design-hud">
         <p className="eyebrow">PRECOMPUTED DESIGN EVIDENCE / {stageIndex + 1} OF {design.data.stages.length}</p>
+        <div className="design-reveal"><span className="reveal-orbit" /><strong>{state.designPlayback === "playing" ? "REVEALING EVIDENCE" : "EVIDENCE INSPECTOR"}</strong><small>Imported artifact · no live generation</small></div>
         <div className="pipeline">{design.data.stages.map((candidateStage, index) => <button key={candidateStage.id} className={index === stageIndex ? "resolved" : ""} onClick={() => issue({ type: "SET_DESIGN_STAGE", stageIndex: index })}>{candidateStage.label}</button>)}</div>
         <div className="progress"><i style={{ width: `${((stageIndex + 1) / design.data.stages.length) * 100}%` }} /></div>
         <h2>{stage.label}</h2>
         <p>{stage.description}</p>
         {stage.candidates.length > 0 && <div className="design-candidates">{stage.candidates.map((candidate) => <button key={candidate.id} className={candidate.id === selectedCandidate?.id ? "active" : ""} onClick={() => issue({ type: "SELECT_DESIGN_CANDIDATE", candidateId: candidate.id })}>{candidate.name}<small>score {candidate.metrics[0]?.value.toFixed(4)} · recovery {((candidate.metrics[2]?.value ?? 0) * 100).toFixed(1)}%</small></button>)}</div>}
         {selectedCandidate && <p>ProteinMPNN score {selectedCandidate.metrics[0]?.value.toFixed(4)}. This estimates sequence compatibility with the backbone; it is not affinity or experimental efficacy.</p>}
-        <div className="design-controls"><button disabled={stageIndex === 0} onClick={() => issue({ type: "SET_DESIGN_STAGE", stageIndex: stageIndex - 1 })}>Previous</button><button disabled={stageIndex === design.data.stages.length - 1} onClick={() => issue({ type: "SET_DESIGN_STAGE", stageIndex: stageIndex + 1 })}>Next</button><button onClick={() => issue({ type: "LEAVE_DESIGN_JOURNEY" })}>Return to source</button></div>
+        <div className="design-controls"><button onClick={() => issue({ type: "RESTART_DESIGN_TRAJECTORY" })}>Restart</button><button onClick={() => issue({ type: state.designPlayback === "playing" ? "PAUSE_DESIGN_TRAJECTORY" : "PLAY_DESIGN_TRAJECTORY" })}>{state.designPlayback === "playing" ? "Pause" : "Play reveal"}</button><button disabled={stageIndex === 0} onClick={() => issue({ type: "STEP_DESIGN_STAGE", direction: "backward" })}>Back</button><button disabled={stageIndex === design.data.stages.length - 1} onClick={() => issue({ type: "STEP_DESIGN_STAGE", direction: "forward" })}>Step</button><button onClick={() => issue({ type: "COMPARE_DESIGN_CANDIDATES", candidateIds: design.data.stages.flatMap((item) => item.candidates.map((candidate) => candidate.id)).slice(0, 2) })}>Compare</button><button onClick={() => issue({ type: "LEAVE_DESIGN_JOURNEY" })}>Return to source</button></div>
+        <input className="design-scrubber" type="range" min="0" max={design.data.stages.length - 1} value={stageIndex} onChange={(event) => issue({ type: "SEEK_DESIGN_STAGE", stageIndex: Number(event.target.value) })} aria-label="Seek design evidence stage" />
+        {state.mode === "comparison" && <div className="comparison-note">Candidate comparison is limited to the two imported ProteinMPNN outputs. No predicted structure, interface metric, affinity, or wet-lab validation is available in this source run.</div>}
         <small>{stage.provenance.source} · {stage.provenance.methodVersion}<br />{stage.provenance.limitations[0]}</small>
       </section>;
     })()}

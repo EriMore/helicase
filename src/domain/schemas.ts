@@ -16,8 +16,14 @@ export const sceneCommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("FOCUS_RESIDUES"), start: z.number().int().min(-10_000).max(100_000), end: z.number().int().min(-10_000).max(100_000), chain: z.string().min(1).max(12).optional(), requestId: z.number().int().nonnegative() }).strict(),
   z.object({ type: z.literal("RETRY_STRUCTURE") }).strict(),
   z.object({ type: z.literal("START_DESIGN_JOURNEY"), trajectoryId: z.string().min(1).max(120), specification: z.string().min(1).max(500) }).strict(),
+  z.object({ type: z.literal("PLAY_DESIGN_TRAJECTORY") }).strict(),
+  z.object({ type: z.literal("PAUSE_DESIGN_TRAJECTORY") }).strict(),
+  z.object({ type: z.literal("STEP_DESIGN_STAGE"), direction: z.enum(["forward", "backward"]) }).strict(),
+  z.object({ type: z.literal("SEEK_DESIGN_STAGE"), stageIndex: z.number().int().min(0).max(100) }).strict(),
+  z.object({ type: z.literal("RESTART_DESIGN_TRAJECTORY") }).strict(),
   z.object({ type: z.literal("SET_DESIGN_STAGE"), stageIndex: z.number().int().min(0).max(100) }).strict(),
   z.object({ type: z.literal("SELECT_DESIGN_CANDIDATE"), candidateId: z.string().min(1).max(120) }).strict(),
+  z.object({ type: z.literal("COMPARE_DESIGN_CANDIDATES"), candidateIds: z.array(z.string().min(1).max(120)).min(1).max(2) }).strict(),
   z.object({ type: z.literal("LEAVE_DESIGN_JOURNEY") }).strict(),
 ]);
 

@@ -29,6 +29,8 @@ describe("scientific runtime schemas", () => {
 
   it("rejects unbounded copilot tool arguments", () => {
     expect(parseCopilotToolCall("set_design_stage", { stage_index: 99 })).toBeNull();
+    expect(parseCopilotToolCall("design_binder", { target_site: "unknown", spec: "make one" })).toBeNull();
+    expect(parseCopilotToolCall("design_binder", { target_site: "6ehb-homotrimer", spec: "map this request" })).not.toBeNull();
     expect(parseCopilotToolCall("query_atlas", { query: "kinase", injected: true })).toBeNull();
     expect(parseCopilotToolCall("return_to_universe", {})).toEqual({ name: "return_to_universe", arguments: {} });
   });

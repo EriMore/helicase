@@ -22,4 +22,15 @@ describe("SceneController reducer", () => {
     expect(returned.cameraContext).toEqual(context);
     expect(returned.mode).toBe("universe");
   });
+
+  it("supports deterministic interruptible design playback", () => {
+    let state = reduceScene(initialSceneState, { type: "START_DESIGN_JOURNEY", trajectoryId: "proteinmpnn-6ehb-example-6", specification: "inspect" });
+    state = reduceScene(state, { type: "PLAY_DESIGN_TRAJECTORY" });
+    expect(state.designPlayback).toBe("playing");
+    state = reduceScene(state, { type: "STEP_DESIGN_STAGE", direction: "forward" });
+    expect(state.designPlayback).toBe("paused");
+    expect(state.designStageIndex).toBe(1);
+    state = reduceScene(state, { type: "COMPARE_DESIGN_CANDIDATES", candidateIds: ["6ehb-sample-1", "6ehb-sample-2"] });
+    expect(state.mode).toBe("comparison");
+  });
 });

@@ -96,6 +96,10 @@ The merged protein-universe milestone is the base of `agent/functional-completio
 - Credentialed GPT-5.6 QA requires a valid external `OPENAI_API_KEY` and model entitlement (row 41).
 - Total scene-store migration is intentionally blocked on the final presentation implementation so the temporary shell is not rewritten twice (rows 10 and 11).
 
+## Design trajectory reveal update — 2026-07-20
+
+The headline reveal now has a deterministic player: validated `design_binder` mapping, play/pause/restart, stage stepping, scrubbing, candidate comparison, safe return, and an explicit evidence boundary. RFdiffusion, candidate folding, docking, confidence and wet-lab validation are unavailable in the public run and are not simulated.
+
 ## Definition of completion
 
 The closeout is publishable when every row is `Complete` or evidence-backed `Blocked`, all local validations and the manual production journey pass, PR #6 reflects this matrix, and the branch is pushed without merging.

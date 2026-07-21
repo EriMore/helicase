@@ -12,6 +12,8 @@ Helicase Atlas is a browser-native scientific instrument for navigating a spatia
 - RCSB/SIFTS chain and UniProt residue-coverage metadata for experimental structures.
 - Cartoon, molecular-surface, ball-and-stick, ligand, and residue-range focus controls behind the structure adapter.
 - An attributable precomputed ProteinMPNN sequence-redesign journey for UniProt A5F934 / PDB 6EHB. It stops before unsupported structure, affinity, or wet-lab validation claims.
+- `design_binder` maps an eligible request to that imported artifact; it never generates a sequence or claims binding. The player supports play, pause, scrub, step, comparison, provenance inspection, and return to source context.
+- `design_binder` maps an eligible request to that imported artifact; it never generates a sequence or claims binding. The player supports play, pause, scrub, step, comparison, provenance inspection, and return to source context.
 - Streamed GPT-5.6 Responses API integration with strict runtime-validated scene tools and an explicit offline fallback.
 
 ## Run locally
