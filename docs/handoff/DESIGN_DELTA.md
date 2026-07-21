@@ -50,13 +50,13 @@ Deviations from `docs/design/final/` and the exported Claude Design prototype, d
 
 **Target:** `VISUAL_ACCEPTANCE_CRITERIA.md` implies clean, uncluttered territory labeling ("dense-but-breathable").
 
-**Implemented:** All 6 territory labels project unconditionally whenever on-screen. The arrival-framing fix in item 6 below (r:900 + `WORLD_SCALE`) gives them materially more room and resolved the severe case reported in user testing, but no screen-space de-overlap pass exists, so labels can still touch when two territory centers happen to align closely from a given camera angle.
+**Implemented:** All 6 territory labels project unconditionally whenever on-screen. The arrival-framing fix in item 6 below (r:900 + `WORLD_SCALE`) gives them materially more room and resolved the severe case reported in user testing. One specific, recurring collision was root-caused and fixed directly: a territory label's projected position can coincide with the query bar's fixed screen region (confirmed via `document.elementFromPoint` — it was landing on a real suggestion-chip button, not empty space, which silently ate the click). `projectLabels()` in `WorldCanvas.tsx` now detects that specific overlap and nudges the label below the query bar's reserved rectangle. What remains unaddressed is territory-*vs*-territory overlap (two territory labels landing close to each other from a given camera angle) — no general label-collision solver exists for that case.
 
-**Reason:** Time-boxed for this pass; a proper fix (screen-space label-collision resolution, à la force-directed label placement) is more engineering than this pass affords.
+**Reason:** The query-bar collision was fixed because it silently broke a real interaction (the click landed on the wrong element). Territory-vs-territory overlap is presentation-only — clicking either label still resolves correctly — so a full force-directed label-placement solver was judged more engineering than this pass affords for a cosmetic-only remainder.
 
-**Impact:** Cosmetic only — clicking a label always resolves to the correct territory regardless of visual overlap (verified via automated click).
+**Impact:** The query-bar collision (the one that broke interaction) is fixed and verified (e2e `entering a territory…` test passes reliably). Territory-vs-territory overlap remains cosmetic only — clicking a label always resolves to the correct territory regardless of visual overlap (verified via automated click).
 
-**Temporary:** Yes — a screen-space de-overlap pass is the correct follow-up.
+**Temporary:** The territory-vs-territory remainder is — a general screen-space de-overlap pass is the correct follow-up. The query-bar collision fix is permanent.
 
 ---
 

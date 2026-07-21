@@ -13,7 +13,8 @@ Last updated: 2026-07-21, by Claude (live user-testing bugfix session, following
 3. `4ea6ff6` — Development log, current-state, and design-delta doc updates.
 4. `e30b235` — Playwright E2E suite + a real Ask Atlas visibility bug fix.
 5. `28f18a1` — Recorded the fully-green E2E suite, re-verified acceptance matrix.
-6. **(this session)** Live-user-testing bugfix round — see below. The user ran the actual build and reported 12 concrete defects; every one was root-caused and fixed, not just cosmetically patched.
+6. `988ad92` — Live-user-testing bugfix round (10 defects) — see below.
+7. `06f79e1` — Follow-up fix: territory labels now dodge the query bar's screen-space region (the e2e territory-entry test caught a real remaining collision after `988ad92`; root-caused via `document.elementFromPoint` at the label's exact projected position — it was landing on a real suggestion chip, not empty space).
 
 ## This session's bugfix round (live user testing)
 
@@ -37,19 +38,19 @@ All fixes were verified end-to-end with Playwright against the real production b
 ## What's implemented and verified this session
 
 - `npm run typecheck`, `npm run lint`, `npm test` (26 tests across 4 files, including an updated `CameraEngine` home-framing test for r:900), `npm run build` all pass.
-- `npm run test:e2e` — 7/7 Playwright tests pass against the rebuilt production build.
-- Manual, scripted Playwright verification of every one of the 10 fixes above, screenshotted at 1920×1080 in both themes.
+- **`npm run test:e2e` — 7/7 Playwright tests pass**, confirmed on a clean re-run after `06f79e1` (`entering a territory expands the depth rail and shows a return hint` now passes reliably — verified 4.3 minutes, all green).
+- Manual, scripted Playwright verification of every one of the 10 fixes above, screenshotted at 1920×1080 in both themes, plus a direct `document.elementFromPoint` diagnostic proving the territory-label click lands on the label itself (not a suggestion chip) after `06f79e1`.
 
 ## Known gaps / deferred work (see `docs/handoff/DESIGN_DELTA.md` for the full detail)
 
 1. Design journey is a continuous 6-beat timeline rather than the prototype's 9 discrete stages — intentional, per explicit task instruction.
 2. No secondary-structure coloring in the sequence tray (no real, non-sparse data source wired yet).
-3. Territory labels can still occasionally touch at some camera angles — much improved this session, not fully eliminated; a proper fix is screen-space label-collision resolution.
+3. Territory labels can still occasionally touch *each other* (not the query bar, which now has a dedicated exclusion zone) at some camera angles — improved this session, not fully eliminated; a proper fix is general screen-space label-collision resolution.
 4. No "sourced fact" callout in Glance (no real per-protein source for it beyond the old 7 prototype fixtures).
 5. Not yet done: screenshot-based automated visual-regression tests, an automated reduced-motion test, a credentialed Ask Atlas smoke test (no `OPENAI_API_KEY` available this session).
-6. The query grid/shell layout constants (`QUERY_PULL`, `QUERY_SPACING`, `QUERY_SHELL_RADIUS` in `WorldCanvas.tsx`) are hand-tuned and not unit-tested in isolation (covered indirectly by e2e + this session's manual screenshots).
+6. The query grid/shell layout constants (`QUERY_PULL`, `QUERY_SPACING`, `QUERY_SHELL_RADIUS` in `WorldCanvas.tsx`) and the query-bar exclusion-zone rectangle in `projectLabels()` are hand-tuned and not unit-tested in isolation (covered indirectly by e2e + this session's manual screenshots).
 7. Mol* representation/color-mode switching still re-runs the full plugin `initialize()` rather than a lighter update path (pre-existing).
 
 ## Exact next task
 
-Add automated reduced-motion and wider-breakpoint (2560×1440) checks to the e2e suite, then a credentialed Ask Atlas run if `OPENAI_API_KEY` becomes available. After that, a screen-space label-collision pass for `DESIGN_DELTA.md` item 3.
+Add automated reduced-motion and wider-breakpoint (2560×1440) checks to the e2e suite, then a credentialed Ask Atlas run if `OPENAI_API_KEY` becomes available. After that, a general territory-vs-territory screen-space label-collision pass for `DESIGN_DELTA.md` item 3 (the territory-vs-query-bar case is now handled).

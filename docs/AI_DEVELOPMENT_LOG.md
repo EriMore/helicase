@@ -113,6 +113,36 @@ See `docs/handoff/CURRENT_STATE.md` "Exact next task" — automated reduced-moti
 
 ---
 
+## 2026-07-21T07:00:00+00:00 - Follow-up: territory label vs. query bar collision, e2e fully green
+
+**Phase:** Validation, direct follow-up to the previous entry
+
+**Objective**
+The prior bugfix commit's pointer-events fix wasn't sufficient — the e2e suite's territory-entry test still failed on re-run. Root-cause precisely rather than re-guessing.
+
+**Completed**
+- Used `page.evaluate(() => document.elementFromPoint(x, y))` at the exact center of the territory label's bounding box to find out, with certainty, what the browser itself considered the topmost element there. Result: a real `.hx-suggestion-chip` button ("membrane receptors"), not empty flex-gap space — meaning the previous commit's pointer-events fix (which only addressed dead space) was solving a different, smaller problem than the one actually causing the test to fail.
+- Fixed properly: `projectLabels()` now computes the query bar's known screen-space rectangle each frame and nudges a territory label below it if their positions would coincide, rather than trying to win a z-order fight between two legitimately-interactive elements.
+- Verified the fix directly (not by assumption) with the same `elementFromPoint` diagnostic: the label's projected position moved from y:138 (inside the chip row) to y:230 (below it), and `elementFromPoint` at the new position correctly resolves to the label's own `.hx-label-name` div.
+- Also diagnosed and worked around an unrelated environment issue during this pass: a stray `next-server` process from an earlier manual test survived process kills targeted by name pattern and caused a completely unrelated catastrophic e2e failure (`.hx-loading` never appearing at all) on one intermediate run. Confirmed via `ps`/`ss` that killing it and restarting cleanly (using the harness's `run_in_background` rather than manual `nohup &`/`disown`, which was silently failing to launch in this sandbox) resolved it — not a code issue, but worth noting for future sessions in this environment.
+
+**Validation**
+- `npm run typecheck`, `npm run lint`, `npm test` (26/26) — pass.
+- `npm run test:e2e` — **7/7 pass**, confirmed clean (4.3 minutes, all green, including the previously-flaky territory-entry test).
+
+**Git**
+- Branch: `claude/final-implementation`.
+- Commits: `988ad92` (bugfix round), `06f79e1` (this fix).
+- PR: #11, draft, targeting `integration/claude-handoff`.
+
+**Codex**
+- Session ID: Pending (/feedback)
+
+**Next**
+Same as the prior entry: automated reduced-motion/2560×1440 e2e coverage, a credentialed Ask Atlas run if `OPENAI_API_KEY` becomes available, and a *territory-vs-territory* (not territory-vs-query-bar, now fixed) label-collision pass.
+
+---
+
 ## 2026-07-20T05:40:00+01:00 - Functional-completion closeout
 
 **Phase:** Validation and publication
