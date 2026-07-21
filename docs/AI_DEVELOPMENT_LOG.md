@@ -40,6 +40,39 @@ Playwright E2E suite for the core navigation loop, screenshot-based visual regre
 
 ---
 
+## 2026-07-21T01:45:00+00:00 - Playwright E2E suite, a real Ask Atlas bug found and fixed
+
+**Phase:** Validation
+
+**Objective**
+Add durable end-to-end test coverage for the core navigation loop and re-verify `docs/handoff/FINAL_ACCEPTANCE_MATRIX.md` against the shipped build.
+
+**Completed**
+- Added `e2e/atlas.spec.ts` + `playwright.config.ts` (pre-installed headless Chromium, generous timeouts to accommodate real UniProt shard loading in this environment): loading→Universe arrival, zero-console-error arrival, theme persistence across reload, territory entry, deterministic query, Ask Atlas ⌘K/Ctrl+K summon+dismiss, sound-preference persistence.
+- The suite caught a real bug on its first run: `AtlasExperience` passed `!loaderVisible && !commandOpen` as `AskAtlas`'s `visible` prop. Since `AskAtlas` returned `null` whenever `!visible`, opening the command panel (`commandOpen: true`) immediately unmounted the entire component — including the command panel it had just opened — making ⌘K appear to do nothing. Fixed: `visible` now only reflects loading state; the summon button alone hides while the panel is open.
+- Diagnosed the failure methodically before patching: verified via a raw CDP keyboard dispatch and a synthetic `window.dispatchEvent` that the keydown handler itself fired correctly with the right modifiers, which isolated the bug to the render-visibility gate rather than event handling.
+- Added `vitest.config.ts` excluding `e2e/**`, since Vitest's default include glob was also picking up the Playwright spec file and failing on `test.describe`.
+- Removed two small leftovers found while landing the above: a dead no-op hidden `<form>` in `AtlasExperience.tsx`, and an orphaned CSS class reference in `DesignPanel.tsx`.
+- Re-verified `docs/handoff/FINAL_ACCEPTANCE_MATRIX.md`'s Ask Atlas and Light+dark-parity rows against the now-passing suite.
+
+**Validation**
+- `npm run typecheck`, `npm run lint`, `npm test` (26 tests / 4 files) — pass.
+- `npm run test:e2e` — **7/7 pass** (`e2e/atlas.spec.ts`), ~4.4 minutes total against the real production build with real UniProt data loading.
+- `npm run build` — pass.
+
+**Git**
+- Branch: `claude/final-implementation`.
+- Commits: `e30b235` (E2E suite + Ask Atlas fix), plus the doc updates in this entry.
+- PR: #11, draft, targeting `integration/claude-handoff`.
+
+**Codex**
+- Session ID: Pending (/feedback)
+
+**Next**
+See `docs/handoff/CURRENT_STATE.md` "Exact next task" — reduced-motion/wider-breakpoint automated coverage, a credentialed Ask Atlas run if `OPENAI_API_KEY` becomes available, and the territory-label-overlap polish item in `DESIGN_DELTA.md`.
+
+---
+
 ## 2026-07-20T05:40:00+01:00 - Functional-completion closeout
 
 **Phase:** Validation and publication

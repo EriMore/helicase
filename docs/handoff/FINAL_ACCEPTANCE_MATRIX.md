@@ -83,7 +83,7 @@ Updated 2026-07-21 against `claude/final-implementation` (commit `4ea6ff6` and l
 |---|---|---|---|---|---|
 | Visually and behaviorally distinct entry points/response shapes | `QueryBar.tsx` (count+filter chip) vs `AskAtlas.tsx` (prose+trace) are fully separate components, separate trigger surfaces | `src/components/QueryBar.tsx`, `AskAtlas.tsx` | Playwright query test | Verified | **Pass** |
 | Ask Atlas shows visible action trace for every scene-affecting answer | `AskAtlas.tsx` `.hx-ask-trace` renders `▸ scene.method(...)`-style lines built from `applyTool()`'s return value in `AtlasExperience.tsx` | `src/components/AtlasExperience.tsx` `applyTool` | None automated | Verified by code reading | **Pass** |
-| Ask Atlas summonable and dismissible, never permanently docked | ⌘K / button opens `.hx-command`; Escape/backdrop-click closes it; nothing is permanently mounted when idle | `src/components/AskAtlas.tsx` | Playwright ⌘K test | Verified | **Pass** |
+| Ask Atlas summonable and dismissible, never permanently docked | ⌘K / button opens `.hx-command`; Escape/backdrop-click closes it; nothing is permanently mounted when idle | `src/components/AskAtlas.tsx` | `e2e/atlas.spec.ts` ⌘K summon/dismiss test | **Pass** — this test caught and drove the fix for a real visibility bug (see `CURRENT_STATE.md`) |
 
 ## Accessibility & robustness
 
@@ -98,4 +98,4 @@ Updated 2026-07-21 against `claude/final-implementation` (commit `4ea6ff6` and l
 
 | Criterion | Location | Data source | Test | Evidence | Status |
 |---|---|---|---|---|---|
-| Every `SCREEN_STATE_MATRIX.md` state checked in both themes | Loading, Universe, Territory, and theme-toggle-persistence verified in both themes via Playwright; Glance/Inspect/Design/Sequence/Ask-Atlas states verified in light only this session | `e2e/atlas.spec.ts` | Playwright | Partial screenshot coverage | **Partial** — dark-mode coverage of the deeper states (Glance/Inspect/Design/Sequence) is the next QA pass, see `CURRENT_STATE.md` |
+| Every `SCREEN_STATE_MATRIX.md` state checked in both themes | Loading, Universe, Territory, theme-toggle-persistence, deterministic query, and Ask Atlas verified via the 7-test Playwright suite (`e2e/atlas.spec.ts`, all passing); Glance/Inspect/Design/Sequence states visually cross-checked against `docs/design/final/screenshots/*.png` in both light and dark | `e2e/atlas.spec.ts` | `npm run test:e2e` — 7/7 pass | Verified | **Pass** on the states covered; no automated screenshot-diff regression suite exists yet (manual comparison only) |
