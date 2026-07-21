@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import { initialSceneState, reduceScene, type SceneCommand } from "@/domain/atlas";
 import { copilotStreamEventSchema, sceneCommandSchema } from "@/domain/schemas";
 import { parseCopilotToolCall, type CopilotToolCall } from "@/domain/copilot-tools";
-import { territories } from "@/domain/territories";
+import { clusters } from "@/domain/clusters";
 import { domainColorHex } from "@/domain/domain-colors";
 import type { AtlasProtein, AtlasSearchResult } from "@/domain/atlas-data";
 import { useProteinAtlas } from "@/hooks/useProteinAtlas";
@@ -15,16 +15,20 @@ import { useDesignTrajectory } from "@/hooks/useDesignTrajectory";
 import { useProteinDetail } from "@/hooks/useProteinDetail";
 import { useTheme } from "@/hooks/useTheme";
 import { useSound } from "@/hooks/useSound";
+import { useOnboarding } from "@/hooks/useOnboarding";
+import { useStructureBounds } from "@/hooks/useStructureBounds";
 import { WorldCanvas, type WorldMetrics } from "./WorldCanvas";
 import { Header } from "./Header";
 import { DepthRail } from "./DepthRail";
 import { QueryBar } from "./QueryBar";
 import { IdentityPanel } from "./IdentityPanel";
 import { InspectPanel } from "./InspectPanel";
+import type { MotionMode } from "./StructureView";
 import { DesignPanel } from "./DesignPanel";
 import { SequenceTray } from "./SequenceTray";
 import { AskAtlas } from "./AskAtlas";
 import { LoadingScreen } from "./LoadingScreen";
+import { Onboarding } from "./Onboarding";
 
 const StructureView = dynamic(() => import("./StructureView").then((module) => module.StructureView), { ssr: false });
 
@@ -47,7 +51,7 @@ export function AtlasExperience() {
   const [copilotBusy, setCopilotBusy] = useState(false);
   const [commandError, setCommandError] = useState<string | null>(null);
   const [structureStatus, setStructureStatus] = useState<"loading" | "ready" | "unavailable">("loading");
-  const [autoRotate, setAutoRotate] = useState(false);
+  const [motionMode, setMotionMode] = useState<MotionMode>("off");
   const copilotRequest = useRef<AbortController | null>(null);
   const answerTimer = useRef<number | null>(null);
   const designProgressRef = useRef(0);
@@ -69,6 +73,7 @@ export function AtlasExperience() {
   // ---- loading ----
   const loaderVisible = !atlas.manifest || atlas.progress < 1;
   const stageLabel = !atlas.manifest ? "OPENING THE BIOLOGICAL INDEX" : atlas.progress < 1 ? "SPATIALIZING PROTEIN FAMILIES" : "ATLAS READY";
+  const onboarding = useOnboarding(!loaderVisible);
 
   // ---- query ----
   const runQuery = useCallback(async (value: string) => {
@@ -84,19 +89,19 @@ export function AtlasExperience() {
 
   const clearQuery = useCallback(() => { setQuery(""); setQueryResults([]); issue({ type: "CLEAR_QUERY" }); }, [issue]);
 
-  const dominantTerritoryLabel = useMemo(() => {
+  const dominantClusterLabel = useMemo(() => {
     if (!queryResults.length) return null;
     const counts = new Map<string, number>();
     for (const result of queryResults) counts.set(result.protein.region, (counts.get(result.protein.region) ?? 0) + 1);
     const topRegion = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
-    const territory = territories.find((candidate) => candidate.regions.includes(topRegion as never));
-    return territory?.label ?? "Mixed territories";
+    const cluster = clusters.find((candidate) => candidate.regions.includes(topRegion as never));
+    return cluster?.label ?? "Mixed clusters";
   }, [queryResults]);
 
   // ---- selection / navigation ----
   const selectProtein = useCallback((protein: AtlasProtein) => { issue({ type: "SELECT_PROTEIN", proteinId: protein.id }); sound.play("select"); }, [issue, sound]);
-  const enterTerritory = useCallback((territoryId: string) => { issue({ type: "ENTER_TERRITORY", territoryId }); sound.play("enter"); }, [issue, sound]);
-  const navigateLevel = useCallback((level: "universe" | "territory" | "protein" | "structure") => { issue({ type: "NAV_TO_LEVEL", level }); sound.play("back"); }, [issue, sound]);
+  const enterCluster = useCallback((clusterId: string) => { issue({ type: "ENTER_CLUSTER", clusterId }); sound.play("enter"); }, [issue, sound]);
+  const navigateLevel = useCallback((level: "universe" | "cluster" | "protein" | "structure") => { issue({ type: "NAV_TO_LEVEL", level }); sound.play("back"); }, [issue, sound]);
   const returnHome = useCallback(() => { issue({ type: "RETURN_TO_UNIVERSE" }); clearQuery(); sound.play("back"); }, [issue, clearQuery, sound]);
   const inspectStructure = useCallback(() => { issue({ type: "INSPECT_STRUCTURE" }); sound.play("enter"); }, [issue, sound]);
   const startDesign = useCallback(() => { issue({ type: "START_DESIGN", trajectoryId: "proteinmpnn-6ehb-example-6", specification: "Redesign the sequence of the 6EHB outer-membrane-protein-U homotrimer with ProteinMPNN, tying equivalent positions across chains A, B, and C at sampling temperature 0.2." }); sound.play("enter"); }, [issue, sound]);
@@ -153,7 +158,7 @@ export function AtlasExperience() {
   const applyTool = useCallback(async (tool: CopilotToolCall): Promise<string[]> => {
     switch (tool.name) {
       case "query_atlas": await runQuery(tool.arguments.query); return [`scene.filter("${tool.arguments.query}")`];
-      case "focus_territory": enterTerritory(tool.arguments.territory_id); return [`scene.focusTerritory(${tool.arguments.territory_id})`];
+      case "focus_cluster": enterCluster(tool.arguments.cluster_id); return [`scene.focusCluster(${tool.arguments.cluster_id})`];
       case "select_protein": {
         const protein = atlas.recordById.get(tool.arguments.protein_id);
         if (!protein) throw new Error(`${tool.arguments.protein_id} is not present in scene context.`);
@@ -183,7 +188,7 @@ export function AtlasExperience() {
         returnHome();
         return ["scene.returnToUniverse()"];
     }
-  }, [runQuery, enterTerritory, atlas.recordById, selectProtein, state.mode, state.threadsOn, inspectStructure, confidence.status, issue, selectedProtein, startDesign, returnHome]);
+  }, [runQuery, enterCluster, atlas.recordById, selectProtein, state.mode, state.threadsOn, inspectStructure, confidence.status, issue, selectedProtein, startDesign, returnHome]);
 
   const submitCommand = useCallback(async (value: string) => {
     const question = value.trim();
@@ -203,7 +208,7 @@ export function AtlasExperience() {
         body: JSON.stringify({
           message: question,
           scene: {
-            mode: state.mode, territoryId: state.territoryId, query: state.query, indexedProteins: atlas.indexedCount,
+            mode: state.mode, clusterId: state.clusterId, query: state.query, indexedProteins: atlas.indexedCount,
             representation: state.structureRepresentation, ligandsVisible: state.ligandsVisible,
             confidenceXray: state.confidenceXray, threadsOn: state.threadsOn, residueFocus: state.residueFocus,
           },
@@ -258,8 +263,8 @@ export function AtlasExperience() {
 
   // ---- derived UI flags ----
   const releaseLabel = atlas.manifest?.source.release && atlas.manifest.source.release !== "unknown" ? `UNIPROT ${atlas.manifest.source.release}` : "DEVELOPMENT INDEX";
-  const showQuery = !loaderVisible && (state.mode === "universe" || state.mode === "territory") && !commandOpen;
-  const territoryLabel = state.territoryId ? territories.find((t) => t.id === state.territoryId)?.label ?? null : null;
+  const showQuery = !loaderVisible && (state.mode === "universe" || state.mode === "cluster") && !commandOpen;
+  const clusterLabel = state.clusterId ? clusters.find((c) => c.id === state.clusterId)?.label ?? null : null;
   const canDesign = !!selectedProtein && selectedProtein.id === "A5F934";
   // Memoized on `detail` (stable unless the resolved UniProt record actually changes) so this
   // array keeps referential identity across unrelated re-renders (e.g. the once-a-second FPS
@@ -271,6 +276,8 @@ export function AtlasExperience() {
   );
   const showAskAtlas = !loaderVisible;
   const navHint = state.mode === "universe" ? "DRAG ORBIT · RIGHT/SHIFT-DRAG PAN · SCROLL ZOOM · DOUBLE-CLICK FOCUS" : "ESC RETURNS ONE LEVEL";
+  const structureActive = state.mode === "inspect" || state.mode === "design";
+  const structureBounds = useStructureBounds(structureActive, state.mode);
 
   const onSelectProteinFromWorld = useCallback((protein: AtlasProtein) => { selectProtein(protein); }, [selectProtein]);
 
@@ -281,13 +288,13 @@ export function AtlasExperience() {
         scene={state}
         proteins={atlas.records}
         onSelectProtein={onSelectProteinFromWorld}
-        onEnterTerritory={enterTerritory}
+        onEnterCluster={enterCluster}
         onHoverProtein={() => {}}
         onMetrics={setWorldMetrics}
         onDeselect={returnOneLevel}
       />
 
-      {(state.mode === "inspect" || state.mode === "design") && selectedProtein && (
+      {structureActive && selectedProtein && (
         <StructureView
           active
           structure={selectedProtein.structure}
@@ -297,11 +304,14 @@ export function AtlasExperience() {
           domains={structureDomains}
           showLigands={state.ligandsVisible}
           focusRange={state.residueFocus}
+          boundsLeft={structureBounds.left}
+          boundsRight={structureBounds.right}
           retryKey={state.structureRetry}
           onStatusChange={setStructureStatus}
           onResiduePick={(residueNumber) => issue({ type: "SET_SEQUENCE_SELECTION", selection: { start: residueNumber - 1, end: residueNumber - 1 } })}
           theme={theme}
-          autoRotate={autoRotate || state.mode === "design"}
+          motion={state.mode === "design" ? "rotate" : motionMode}
+          confidenceMean={confidence.status === "available" ? confidence.data.mean : null}
         />
       )}
 
@@ -309,11 +319,11 @@ export function AtlasExperience() {
       <div className="hx-scrim-bot" />
       <div className="hx-vignette" />
 
-      <Header theme={theme} releaseLabel={releaseLabel} soundOn={sound.enabled} onToggleSound={sound.toggle} ambientOn={sound.ambientOn} onToggleAmbient={sound.toggleAmbient} onToggleTheme={toggleTheme} onHome={returnHome} showBack={state.mode !== "universe"} onBack={returnOneLevel} />
+      <Header theme={theme} releaseLabel={releaseLabel} soundOn={sound.enabled} onToggleSound={sound.toggle} ambientOn={sound.ambientOn} onToggleAmbient={sound.toggleAmbient} onToggleTheme={toggleTheme} onHome={returnHome} showBack={state.mode !== "universe"} onBack={returnOneLevel} onReplayGuide={onboarding.replay} />
       <DepthRail
         mode={state.mode}
         visible={!loaderVisible}
-        territoryLabel={territoryLabel}
+        clusterLabel={clusterLabel}
         proteinName={selectedProtein?.name ?? null}
         structureLabel={selectedProtein ? (state.mode === "design" ? `Design · ${selectedProtein.structure.accession}` : selectedProtein.structure.accession) : null}
         onNavigate={navigateLevel}
@@ -327,7 +337,7 @@ export function AtlasExperience() {
         onClear={clearQuery}
         active={!!state.query}
         resultCount={queryResults.length || null}
-        filterLabel={dominantTerritoryLabel}
+        filterLabel={dominantClusterLabel}
       />
 
       {(state.mode === "glance" || state.mode === "inspect") && selectedProtein && (
@@ -366,8 +376,9 @@ export function AtlasExperience() {
           onOpenSequence={() => issue({ type: state.seqOpen ? "CLOSE_SEQUENCE" : "OPEN_SEQUENCE" })}
           canDesign={canDesign}
           onStartDesign={startDesign}
-          autoRotate={autoRotate}
-          onToggleAutoRotate={() => setAutoRotate((current) => !current)}
+          motionMode={motionMode}
+          onSetMotion={setMotionMode}
+          confidenceAvailable={confidence.status === "available"}
         />
       )}
       {state.mode === "inspect" && structureStatus === "unavailable" && (
@@ -416,7 +427,7 @@ export function AtlasExperience() {
       {!loaderVisible && state.mode !== "inspect" && state.mode !== "design" && !state.seqOpen && (
         <div className="hx-telemetry">
           <div className="hx-telemetry-status">
-            {state.mode === "universe" ? `Atlas ready · ${(atlas.manifest?.coverage.records ?? 0).toLocaleString()} proteins in delivery profile` : state.mode === "territory" ? `${territoryLabel} · ${worldMetrics.visibleCount.toLocaleString()} loaded` : selectedProtein?.name ?? "Atlas ready"}
+            {state.mode === "universe" ? `Atlas ready · ${(atlas.manifest?.coverage.records ?? 0).toLocaleString()} proteins in delivery profile` : state.mode === "cluster" ? `${clusterLabel} · ${worldMetrics.visibleCount.toLocaleString()} loaded` : selectedProtein?.name ?? "Atlas ready"}
           </div>
           <div className="hx-telemetry-row mono">
             <span>{worldMetrics.fps || "—"} FPS</span>
@@ -427,6 +438,8 @@ export function AtlasExperience() {
       )}
 
       {commandError && <p className="hx-command-error" role="alert">{commandError}<button onClick={() => setCommandError(null)}>Dismiss</button></p>}
+
+      <Onboarding open={onboarding.open} step={onboarding.step} onStep={onboarding.setStep} onFinish={onboarding.finish} onSkip={onboarding.skip} />
 
       {loaderVisible && <LoadingScreen theme={theme} stageLabel={stageLabel} progress={atlas.progress} resolvedCount={atlas.records.length} />}
     </main>

@@ -15,10 +15,10 @@ describe("SceneController reducer", () => {
     expect(selected).toMatchObject({ mode: "glance", selectedProteinId: "P69905", structureRepresentation: "cartoon", ligandsVisible: true, residueFocus: null });
   });
 
-  it("walks the 5-level hierarchy: universe -> territory -> glance -> inspect -> design", () => {
+  it("walks the 5-level hierarchy: universe -> cluster -> glance -> inspect -> design", () => {
     let state = initialSceneState;
-    state = reduceScene(state, { type: "ENTER_TERRITORY", territoryId: "catalysis-metabolism" });
-    expect(state.mode).toBe("territory");
+    state = reduceScene(state, { type: "ENTER_CLUSTER", clusterId: "catalysis-metabolism" });
+    expect(state.mode).toBe("cluster");
     state = reduceScene(state, { type: "SELECT_PROTEIN", proteinId: "P69905" });
     expect(state.mode).toBe("glance");
     state = reduceScene(state, { type: "INSPECT_STRUCTURE" });
@@ -28,23 +28,23 @@ describe("SceneController reducer", () => {
     expect(state.design?.playback).toBe("playing");
   });
 
-  it("returns one level at a time, preferring territory over universe when one is active", () => {
-    let state = reduceScene(initialSceneState, { type: "ENTER_TERRITORY", territoryId: "catalysis-metabolism" });
+  it("returns one level at a time, preferring cluster over universe when one is active", () => {
+    let state = reduceScene(initialSceneState, { type: "ENTER_CLUSTER", clusterId: "catalysis-metabolism" });
     state = reduceScene(state, { type: "SELECT_PROTEIN", proteinId: "P69905" });
     state = reduceScene(state, { type: "INSPECT_STRUCTURE" });
     state = reduceScene(state, { type: "RETURN_ONE_LEVEL" });
     expect(state.mode).toBe("glance");
     state = reduceScene(state, { type: "RETURN_ONE_LEVEL" });
-    expect(state.mode).toBe("territory");
-    expect(state.territoryId).toBe("catalysis-metabolism");
+    expect(state.mode).toBe("cluster");
+    expect(state.clusterId).toBe("catalysis-metabolism");
     state = reduceScene(state, { type: "RETURN_ONE_LEVEL" });
     expect(state.mode).toBe("universe");
-    expect(state.territoryId).toBeNull();
+    expect(state.clusterId).toBeNull();
   });
 
-  it("returns directly to glance from a protein selected without a territory", () => {
+  it("returns directly to glance from a protein selected without a cluster", () => {
     let state = reduceScene(initialSceneState, { type: "SELECT_PROTEIN", proteinId: "P69905" });
-    expect(state.territoryId).toBeNull();
+    expect(state.clusterId).toBeNull();
     state = reduceScene(state, { type: "RETURN_ONE_LEVEL" });
     expect(state.mode).toBe("universe");
   });
@@ -69,10 +69,19 @@ describe("SceneController reducer", () => {
     expect(state.design?.progress).toBe(0);
   });
 
-  it("a NAV_TO_LEVEL jump to territory is rejected when no territory was ever entered", () => {
+  it("a NAV_TO_LEVEL jump to cluster is rejected when no cluster was ever entered", () => {
     let state = reduceScene(initialSceneState, { type: "SELECT_PROTEIN", proteinId: "P69905" });
     const before = state;
-    state = reduceScene(state, { type: "NAV_TO_LEVEL", level: "territory" });
+    state = reduceScene(state, { type: "NAV_TO_LEVEL", level: "cluster" });
     expect(state).toBe(before);
+  });
+
+  it("a NAV_TO_LEVEL jump to structure works from design as well as glance (Depth Rail's STRUCTURE row is clickable during a design journey)", () => {
+    let state = reduceScene(initialSceneState, { type: "SELECT_PROTEIN", proteinId: "A5F934" });
+    state = reduceScene(state, { type: "INSPECT_STRUCTURE" });
+    state = reduceScene(state, { type: "START_DESIGN", trajectoryId: "proteinmpnn-6ehb-example-6", specification: "test" });
+    state = reduceScene(state, { type: "NAV_TO_LEVEL", level: "structure" });
+    expect(state.mode).toBe("inspect");
+    expect(state.design).toBeNull();
   });
 });

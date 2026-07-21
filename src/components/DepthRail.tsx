@@ -2,32 +2,33 @@
 
 import type { SceneMode } from "@/domain/atlas";
 
-type Level = { key: "universe" | "territory" | "neighbourhood" | "protein" | "structure"; label: string };
+type Level = { key: "universe" | "cluster" | "protein" | "structure" | "de-novo"; label: string };
 const LEVELS: Level[] = [
   { key: "universe", label: "UNIVERSE" },
-  { key: "territory", label: "TERRITORY" },
-  { key: "neighbourhood", label: "NEIGHBOURHOOD" },
+  { key: "cluster", label: "CLUSTER" },
   { key: "protein", label: "PROTEIN" },
   { key: "structure", label: "STRUCTURE" },
+  { key: "de-novo", label: "DE NOVO" },
 ];
 
 type DepthRailProps = {
   mode: SceneMode;
   visible: boolean;
-  territoryLabel: string | null;
+  clusterLabel: string | null;
   proteinName: string | null;
   structureLabel: string | null;
-  onNavigate: (level: "universe" | "territory" | "protein" | "structure") => void;
+  onNavigate: (level: "universe" | "cluster" | "protein" | "structure") => void;
 };
 
 function currentDepth(mode: SceneMode): number {
-  if (mode === "inspect" || mode === "design") return 4;
-  if (mode === "glance") return 3;
-  if (mode === "territory") return 1;
+  if (mode === "design") return 4;
+  if (mode === "inspect") return 3;
+  if (mode === "glance") return 2;
+  if (mode === "cluster") return 1;
   return 0;
 }
 
-export function DepthRail({ mode, visible, territoryLabel, proteinName, structureLabel, onNavigate }: DepthRailProps) {
+export function DepthRail({ mode, visible, clusterLabel, proteinName, structureLabel, onNavigate }: DepthRailProps) {
   const depth = currentDepth(mode);
   return (
     <nav aria-label="Spatial depth" className="hx-rail hx-glass" style={{ opacity: visible ? 1 : 0 }}>
@@ -35,27 +36,29 @@ export function DepthRail({ mode, visible, territoryLabel, proteinName, structur
       {LEVELS.map((level, index) => {
         const active = index === depth;
         const reachable = index < depth;
-        const sub = level.key === "territory" ? territoryLabel : level.key === "protein" ? proteinName : level.key === "structure" ? structureLabel : null;
-        const clickable = level.key !== "neighbourhood" && (reachable || active);
+        const sub = level.key === "cluster" ? clusterLabel : level.key === "protein" ? proteinName : level.key === "structure" ? structureLabel : null;
+        // "De novo" has no direct jump-to command — it is only ever reached by starting
+        // the design journey from Structure, so it renders active-only, never clickable.
+        const clickable = level.key !== "de-novo" && (reachable || active);
+        const state = active ? "active" : level.key === "de-novo" ? "unavailable" : reachable ? "available" : "unavailable";
         return (
           <button
             key={level.key}
-            className="hx-rail-level"
-            style={{ cursor: clickable ? "pointer" : "default" }}
+            className={`hx-rail-level hx-rail-level--${state}`}
             disabled={!clickable}
-            onClick={() => { if (clickable && level.key !== "neighbourhood") onNavigate(level.key); }}
+            onClick={() => { if (clickable && level.key !== "de-novo") onNavigate(level.key); }}
           >
             <span className="hx-rail-dotwrap">
-              <span className="hx-rail-dot" style={{ background: active ? "var(--teal)" : reachable ? "var(--ink-soft)" : "transparent", borderColor: active ? "var(--teal)" : "var(--glass-brd)" }} />
+              <span className="hx-rail-dot" />
             </span>
             <span className="hx-rail-textwrap">
-              <span className="hx-rail-label mono" style={{ color: active ? "var(--ink)" : reachable ? "var(--ink-soft)" : "var(--ink-faint)" }}>{level.label}</span>
+              <span className="hx-rail-label mono">{level.label}</span>
               {sub && <span className="hx-rail-sub">{sub}</span>}
             </span>
           </button>
         );
       })}
-      <div className="hx-rail-hint mono">{mode === "universe" ? "Click a territory to enter" : "Click a level to return · Esc"}</div>
+      <div className="hx-rail-hint mono">{mode === "universe" ? "Click a cluster to enter" : "Click a level to return · Esc"}</div>
     </nav>
   );
 }

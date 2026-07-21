@@ -1,4 +1,4 @@
-export type SceneMode = "universe" | "territory" | "glance" | "inspect" | "design";
+export type SceneMode = "universe" | "cluster" | "glance" | "inspect" | "design";
 export type StructureRepresentation = "cartoon" | "surface" | "ball-and-stick" | "spacefill";
 export type StructureColorMode = "chain" | "domain";
 export type IdentityTab = "glance" | "learn";
@@ -18,8 +18,8 @@ export type DesignState = {
 
 export type SceneCommand =
   | { type: "SELECT_PROTEIN"; proteinId: string }
-  | { type: "ENTER_TERRITORY"; territoryId: string }
-  | { type: "NAV_TO_LEVEL"; level: "universe" | "territory" | "protein" | "structure" }
+  | { type: "ENTER_CLUSTER"; clusterId: string }
+  | { type: "NAV_TO_LEVEL"; level: "universe" | "cluster" | "protein" | "structure" }
   | { type: "RETURN_ONE_LEVEL" }
   | { type: "RETURN_TO_UNIVERSE" }
   | { type: "QUERY_ATLAS"; query: string; resultIds: string[] }
@@ -45,7 +45,7 @@ export type SceneCommand =
 export type SceneState = {
   mode: SceneMode;
   selectedProteinId: string | null;
-  territoryId: string | null;
+  clusterId: string | null;
   query: string;
   queryResultIds: string[];
   tab: IdentityTab;
@@ -65,7 +65,7 @@ export type SceneState = {
 export const initialSceneState: SceneState = {
   mode: "universe",
   selectedProteinId: null,
-  territoryId: null,
+  clusterId: null,
   query: "",
   queryResultIds: [],
   tab: "glance",
@@ -99,46 +99,46 @@ export function reduceScene(state: SceneState, command: SceneCommand): SceneStat
         threadsOn: false, seqOpen: false, seqSelection: null, design: null,
         lastCommand: command.type,
       };
-    case "ENTER_TERRITORY":
+    case "ENTER_CLUSTER":
       return {
-        ...state, mode: "territory", territoryId: command.territoryId, selectedProteinId: null,
+        ...state, mode: "cluster", clusterId: command.clusterId, selectedProteinId: null,
         query: "", queryResultIds: [], design: null, seqOpen: false, threadsOn: false,
         lastCommand: command.type,
       };
     case "NAV_TO_LEVEL": {
       if (command.level === "universe") return reduceScene(state, { type: "RETURN_TO_UNIVERSE" });
-      if (command.level === "territory") {
-        if (state.territoryId == null || !(state.mode === "glance" || state.mode === "inspect" || state.mode === "design")) return state;
-        return { ...state, mode: "territory", selectedProteinId: null, design: null, seqOpen: false, threadsOn: false, lastCommand: command.type };
+      if (command.level === "cluster") {
+        if (state.clusterId == null || !(state.mode === "glance" || state.mode === "inspect" || state.mode === "design")) return state;
+        return { ...state, mode: "cluster", selectedProteinId: null, design: null, seqOpen: false, threadsOn: false, lastCommand: command.type };
       }
       if (command.level === "protein") {
         if (state.selectedProteinId == null || !(state.mode === "inspect" || state.mode === "design")) return state;
         return { ...state, mode: "glance", design: null, seqOpen: false, lastCommand: command.type };
       }
       if (command.level === "structure") {
-        if (state.selectedProteinId == null || state.mode !== "glance") return state;
-        return { ...state, ...structureDefaults, mode: "inspect", lastCommand: command.type };
+        if (state.selectedProteinId == null || !(state.mode === "glance" || state.mode === "design")) return state;
+        return { ...state, ...structureDefaults, mode: "inspect", design: null, lastCommand: command.type };
       }
       return state;
     }
     case "RETURN_ONE_LEVEL": {
       if (state.mode === "design") return reduceScene(state, { type: "EXIT_DESIGN" });
       if (state.mode === "inspect") return { ...state, mode: "glance", seqOpen: false, lastCommand: command.type };
-      if (state.mode === "glance") return state.territoryId != null
-        ? { ...state, mode: "territory", selectedProteinId: null, threadsOn: false, lastCommand: command.type }
+      if (state.mode === "glance") return state.clusterId != null
+        ? { ...state, mode: "cluster", selectedProteinId: null, threadsOn: false, lastCommand: command.type }
         : reduceScene(state, { type: "RETURN_TO_UNIVERSE" });
-      if (state.mode === "territory") return reduceScene(state, { type: "RETURN_TO_UNIVERSE" });
+      if (state.mode === "cluster") return reduceScene(state, { type: "RETURN_TO_UNIVERSE" });
       return state;
     }
     case "RETURN_TO_UNIVERSE":
       return {
-        ...state, mode: "universe", selectedProteinId: null, territoryId: null,
+        ...state, mode: "universe", selectedProteinId: null, clusterId: null,
         query: "", queryResultIds: [], threadsOn: false, seqOpen: false, design: null,
         lastCommand: command.type,
       };
     case "QUERY_ATLAS":
       return {
-        ...state, mode: "universe", selectedProteinId: null, territoryId: null,
+        ...state, mode: "universe", selectedProteinId: null, clusterId: null,
         query: command.query, queryResultIds: command.resultIds, design: null,
         lastCommand: command.type,
       };

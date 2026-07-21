@@ -16,6 +16,7 @@ export type StructureRepresentation = "cartoon" | "surface" | "ball-and-stick" |
 export type StructureColorMode = "chain" | "domain";
 export type ResidueFocus = { start: number; end: number; chain?: string; requestId: number };
 export type StructureDomain = { label: string; start: number; end: number; color: string };
+export type MotionMode = "off" | "rotate" | "wiggle" | "uncertaintyWiggle";
 type StructureStatus = "loading" | "ready" | "unavailable";
 type StructureViewProps = {
   active: boolean; structure: StructureReference | null; confidenceActive?: boolean;
@@ -23,7 +24,10 @@ type StructureViewProps = {
   showLigands?: boolean; focusRange?: ResidueFocus | null; retryKey?: number; onStatusChange?: (status: StructureStatus) => void;
   onResiduePick?: (residueNumber: number, chain: string) => void;
   theme?: "light" | "dark";
-  autoRotate?: boolean;
+  motion?: MotionMode;
+  confidenceMean?: number | null;
+  boundsLeft?: number | null;
+  boundsRight?: number | null;
 };
 
 const AtlasViewportControls = () => null;
@@ -35,7 +39,7 @@ const REPRESENTATION_PARAMS: Record<Exclude<StructureRepresentation, "cartoon">,
   spacefill: { type: "spacefill", typeParams: { alpha: 1, quality: "high" } },
 };
 
-export function StructureView({ active, structure: structureReference, confidenceActive = false, representation = "cartoon", colorMode = "chain", domains = [], showLigands = true, focusRange = null, retryKey = 0, onStatusChange, onResiduePick, theme = "light", autoRotate = false }: StructureViewProps) {
+export function StructureView({ active, structure: structureReference, confidenceActive = false, representation = "cartoon", colorMode = "chain", domains = [], showLigands = true, focusRange = null, retryKey = 0, onStatusChange, onResiduePick, theme = "light", motion = "off", confidenceMean = null, boundsLeft = null, boundsRight = null }: StructureViewProps) {
   const host = useRef<HTMLDivElement>(null);
   const pluginRef = useRef<Awaited<ReturnType<typeof createPluginUI>> | null>(null);
   const structureDataRef = useRef<Structure | null>(null);
@@ -193,20 +197,29 @@ export function StructureView({ active, structure: structureReference, confidenc
     return () => { disposed = true; pluginRef.current = null; structureDataRef.current = null; disposeInstance(); };
   }, [active, confidenceActive, onStatusChange, representation, colorMode, domains, retryKey, showLigands, structureReference]);
 
-  // Lighting/rotation are visual-only and cheap to re-apply, so they live in their
-  // own effect instead of the init effect above — toggling either must never trigger
-  // a full Mol* plugin remount (redownloading and reparsing the structure).
+  // Lighting/rotation/motion are visual-only and cheap to re-apply, so they live in
+  // their own effect instead of the init effect above — toggling any of them must
+  // never trigger a full Mol* plugin remount (redownloading and reparsing the structure).
   useEffect(() => {
     const plugin = pluginRef.current;
     if (!active || !plugin) return;
     const dark = theme === "dark";
+    // Real Mol* trackball animate modes only — "spin" (ROTATE, a continuous
+    // camera-orbit) and "rock" (Procedural Motion's WIGGLE, a back-and-forth
+    // oscillation), never a fabricated per-atom dynamics simulation. When tied
+    // to confidence, amplitude/speed scale with the real mean AlphaFold pLDDT
+    // already resolved for this structure — lower confidence rocks wider and
+    // faster; nothing here is invented. See docs/SCIENTIFIC_DATA_BOUNDARIES.md.
+    const animate =
+      motion === "rotate" ? { name: "spin" as const, params: { speed: 0.35 } }
+      : motion === "wiggle" ? { name: "rock" as const, params: { speed: 0.6, angle: 6 } }
+      : motion === "uncertaintyWiggle" && confidenceMean != null ? { name: "rock" as const, params: { speed: 0.5 + ((100 - confidenceMean) / 100) * 0.9, angle: 4 + ((100 - confidenceMean) / 100) * 14 } }
+      : { name: "off" as const, params: {} };
     plugin.canvas3d?.setProps({
       renderer: { exposure: dark ? 1.08 : 0.72, ambientIntensity: dark ? 0.7 : 0.46, interiorDarkening: dark ? 0.2 : 0.42 },
-      // A slow, honest camera-orbit spin — not a molecular-dynamics simulation. Atlas does not
-      // fabricate conformational motion; see docs/SCIENTIFIC_DATA_BOUNDARIES.md.
-      trackball: { animate: autoRotate ? { name: "spin", params: { speed: 0.35 } } : { name: "off", params: {} } },
+      trackball: { animate },
     });
-  }, [active, theme, autoRotate, status]);
+  }, [active, theme, motion, confidenceMean, status]);
 
   useEffect(() => {
     const plugin = pluginRef.current; const structure = structureDataRef.current;
@@ -223,8 +236,18 @@ export function StructureView({ active, structure: structureReference, confidenc
     plugin.managers.camera.focusLoci(loci, { durationMs: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 520, minRadius: 26, extraRadius: 14 });
   }, [active, focusRange]);
 
+  // Re-center the model when the usable canvas bounds change (panel widths
+  // differ between Inspect and Design, and the identity panel's width is
+  // responsive) — Mol* only knows to re-frame when explicitly told to.
+  useEffect(() => {
+    const plugin = pluginRef.current;
+    if (!active || !plugin) return;
+    plugin.canvas3d?.requestResize();
+    plugin.canvas3d?.requestCameraReset({ durationMs: 0 });
+  }, [active, boundsLeft, boundsRight, status]);
+
   if (!active || !structureReference) return null;
-  return <div className="structure-view" aria-label={`Molecular view for ${structureReference.accession}`}>
+  return <div className="structure-view" style={{ left: boundsLeft ?? undefined, right: boundsRight ?? undefined }} aria-label={`Molecular view for ${structureReference.accession}`}>
     <div className="structure-canvas" ref={host} />
     <p className={`structure-status ${status}`}>{status === "ready" ? `${structureReference.source} ${structureReference.accession} · Mol*` : status === "loading" ? "Resolving cited coordinates…" : "Structure service unavailable · universe remains navigable"}</p>
   </div>;

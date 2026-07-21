@@ -2,7 +2,7 @@
 
 import { type FormEvent, useEffect, useRef } from "react";
 
-const SUGGESTIONS = ["why are these neighbours?", "highlight low-confidence regions", "design a binder"];
+const SUGGESTIONS = ["why are these related?", "highlight low-confidence regions", "design a binder"];
 
 type AskAtlasProps = {
   visible: boolean;
@@ -72,7 +72,7 @@ export function AskAtlas({ visible, navHint, hintVisible, commandOpen, onOpenCom
                 value={command}
                 onChange={(event) => onCommandChange(event.target.value)}
                 onKeyDown={(event) => { if (event.key === "Escape") onCloseCommand(); }}
-                placeholder="why are these neighbours? · highlight low-confidence regions · design a binder…"
+                placeholder="why are these related? · highlight low-confidence regions · design a binder…"
               />
             </form>
             <div className="hx-command-suggest">

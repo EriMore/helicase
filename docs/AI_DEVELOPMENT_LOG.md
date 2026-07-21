@@ -1,5 +1,56 @@
 ---
 
+## 2026-07-21T12:15:00+00:00 - Territory→Cluster rename, onboarding, protein-name truncation fix, and related polish round
+
+**Phase:** Bugfix / iteration on a new batch of explicit product instructions
+
+**Objective**
+Rename "Territory" to "Cluster" and remove the dead Neighbourhood depth level; fix relationship-thread cluster retention, camera fit-to-view, and thread color; improve Depth Rail state legibility; add a first-run onboarding walkthrough; center the molecular viewport between the real side panels; root-cause and fix truncated protein full names; deepen the Structure/Design field fade; add confidence-scaled Procedural Motion; and raise light-mode query contrast while making query non-matches non-interactive.
+
+**Branch correction**
+The designated continuation branch (`claude/helicase-implementation-continue-ymnwif`) had been cut from `main`, which lacks the entire Territory/Neighbourhood/Depth-Rail/relationship-thread rebuild — that work only exists on `claude/final-implementation` (draft PR #11), which also carries the `docs/handoff/*` files this repository's CLAUDE.md requires reading. The branch was reset onto `origin/claude/final-implementation` before any implementation began; the 6 commits unique to the old `main`-based history (a CLAUDE.md addition and PR #7's design-trajectory work, already evaluated and rejected as a merge target in `LATEST_PR_INTEGRATION_PLAN.md`) were not carried over — nothing of lasting value was lost. See `docs/handoff/CURRENT_STATE.md` for the full account.
+
+**Completed**
+- Renamed Territory → Cluster everywhere: `SceneMode`/`SceneCommand`/`SceneState` identifiers, the copilot tool surface (`focus_territory` → `focus_cluster`), `src/domain/territories.ts` → `src/domain/clusters.ts`, all CSS classes/copy/aria text, and every test. Deliberately did not rename the unrelated, pre-existing `AtlasCluster` type (a finer-grained annotation-family grouping from the ingestion pipeline) to avoid a naming collision — documented inline and in `DESIGN_DELTA.md` item 12.
+- Removed the Neighbourhood depth level (previously dead, permanently-disabled Depth Rail chrome with no feature behind it). Final hierarchy: Universe → Cluster → Protein → Structure → De novo, with De novo now its own Depth Rail row.
+- Entering a cluster now hides non-cluster proteins (new `uClusterHide` shader uniform) rather than only dimming them; verified-related proteins stay visible via the existing `aExempt` exemption. Removed a stray vertical offset so the active cluster's label centers exactly on the camera's target.
+- Revealing relationship threads now fits the camera to the selected protein plus every revealed related protein (new `fitToWorldPoints()` helper). Thread color is now theme-aware (white in dark mode, black in light mode) instead of fixed teal — a recorded, explicit deviation from `DESIGN_TOKENS.md`.
+- Depth Rail active/available/unavailable states are now distinct CSS classes with `pointer-events: none` on unavailable rows, so hover styling can never apply to an unreachable level.
+- Added a 9-step, keyboard-accessible onboarding walkthrough (orbit, pan, zoom, hover/select, enter a cluster, select a protein, Depth navigation, Query, Ask Atlas), persisted via `localStorage`, replayable from a new header `GUIDE ?` button, styled with the existing `hx-glass` panel language.
+- Added `useStructureBounds` (ResizeObserver-driven) so the Mol* viewport centers between the real measured right edge of the identity panel and left edge of the Inspect/Design panel, recalculating on resize and on Inspect↔Design transitions — previously a stale constant left inset rendered the model partially hidden under the (wider) identity panel.
+- Root-caused truncated protein full names to `scripts/build-atlas.mjs`'s `clean(nameRaw, 128)`, which silently hard-truncated UniProt's `protein_name` field (recommended name + every alternative name in parens) at 128 characters with no truncation marker. Raised to 320 (with a matching schema bump) and regenerated the full 75,000-record delivery profile against the live UniProt API (same release, 2026_02) — verified against the task's own example, UniProt P36027, which now ships its complete 161-character name. Added a defense-in-depth UI fix regardless: the identity panel's name now clamps to 3 lines with a measured-overflow "Show full name" toggle and a native tooltip.
+- Deepened the Structure/Design field fade (Inspect 0.24→0.10, Design 0.06→0.03) and tied the petri-dish marker's opacity to the same live dim factor so it recedes with the field instead of holding constant brightness.
+- Added a Procedural Motion block alongside the existing honest Rotate control: WIGGLE (Mol* trackball `rock`) and UNCERTAINTY WIGGLE (`rock` scaled by the structure's real mean AlphaFold pLDDT), disabled with an explanatory tooltip when verified confidence isn't available. No per-atom dynamics are fabricated.
+- Raised light-mode query hit/non-hit contrast independently of dark mode (`queryDimNon`, unchanged in dark mode) and made query non-matches fully non-interactive (no hover, select, or label) while a query is active.
+- Searched the entire branch history for MotifBench-related files; none exist — nothing to remove.
+
+**Files**
+- Added: `src/domain/clusters.ts`, `src/hooks/useOnboarding.ts`, `src/hooks/useStructureBounds.ts`, `src/components/Onboarding.tsx`.
+- Removed: `src/domain/territories.ts`.
+- Modified: `src/domain/atlas.ts`, `src/domain/schemas.ts`, `src/domain/copilot-tools.ts`, `src/engine/camera-navigation.ts`, `src/components/AtlasExperience.tsx`, `src/components/WorldCanvas.tsx`, `src/components/DepthRail.tsx`, `src/components/StructureView.tsx`, `src/components/InspectPanel.tsx`, `src/components/IdentityPanel.tsx`, `src/components/Header.tsx`, `src/components/AskAtlas.tsx`, `app/api/copilot/route.ts`, `app/globals.css`, `scripts/build-atlas.mjs`, `public/data/atlas/**` (regenerated), `README.md`, test files, `docs/handoff/CURRENT_STATE.md`, `docs/handoff/DESIGN_DELTA.md`, `CLAUDE.md` (restored — absent on `claude/final-implementation`).
+
+**Validation**
+- `npm run typecheck` — passed.
+- `npm run lint` — passed (3 pre-existing-pattern `react-hooks/set-state-in-effect` disables added, matching `useTheme.ts`/`useSound.ts`'s established convention for one-time external-state sync).
+- `npm test` — 27/27 passed, including 2 new reducer tests (`ENTER_CLUSTER`/cluster-hierarchy walk, and a fix verifying `NAV_TO_LEVEL → structure` correctly clears `design` when jumping from the design journey).
+- `npm run build` — passed.
+- `npm run test:e2e` — **8/8 passed** (renamed selectors + a new onboarding test), console clean, against the real production build.
+- Corpus regeneration verified end-to-end: UniProt P36027 (yeast MID2, the task's own truncation example) now ships its complete 161-character name; record/PDB-linked counts are stable versus the prior build (75,000 records, 22,429 PDB-linked, same UniProt release 2026_02).
+- Manual Playwright QA (both themes) against the production server directly confirmed the 5-level Depth Rail, the name-overflow "Show full name" toggle, Procedural Motion's confidence-gated Uncertainty Wiggle, the relationship-thread list, and the deepened dark-mode field fade. Live Mol* structure fetches to `models.rcsb.org`/`alphafold.ebi.ac.uk` were not reliably reproducible from inside the headless browser this session (intermittent CORS/connection-reset, while direct `curl` to both hosts succeeded every time) — a sandbox proxy/browser-fetch interaction, not a regression (the fetch code itself was untouched this session). See `docs/handoff/CURRENT_STATE.md` for the full account and the recommended follow-up.
+
+**Git**
+- Branch: `claude/helicase-implementation-continue-ymnwif` (reset onto `origin/claude/final-implementation`; see "Branch correction" above).
+- Commit(s): pending at time of writing.
+- PR: pending — will supersede `claude/final-implementation`'s draft PR #11 target once pushed.
+
+**Codex**
+- Session ID: Pending (`/feedback`)
+
+**Next**
+Re-verify the territory-vs-territory (now cluster-vs-cluster) label-collision remainder noted in `DESIGN_DELTA.md` item 4 still applies under the new hide-non-cluster behavior; consider extending the onboarding's "select a protein" step with a live highlight of the exact point being described; the longer-standing deferred items (secondary-structure coloring in the sequence tray, a credentialed Ask Atlas smoke test, automated visual-regression tests) remain open from prior rounds.
+
+---
+
 ## 2026-07-21T09:50:00+00:00 - Live user-testing bugfix round 3: selection/query visual language, identity panel, navigation chrome, honest design-trajectory motion
 
 **Phase:** Bugfix / iteration on live user feedback

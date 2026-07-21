@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { AtlasProtein } from "@/domain/atlas-data";
 import type { IdentityTab } from "@/domain/atlas";
 import type { ProteinDetailState } from "@/hooks/useProteinDetail";
@@ -25,10 +25,26 @@ type IdentityPanelProps = {
   onClose: () => void;
 };
 
+const NAME_EXPAND_THRESHOLD = 90;
+
 export function IdentityPanel({ protein, detail, tab, onSetTab, threadsOn, onToggleThreads, relatedPool, onSelectRelated, showInspectButton, onInspect, onOpenSequence, canDesign, onStartDesign, onClose }: IdentityPanelProps) {
   const predicted = protein.structure.kind === "predicted";
   const threads = useMemo(() => (threadsOn ? computeRelationshipThreads(protein, relatedPool, THREAD_LIMIT) : []), [threadsOn, protein, relatedPool]);
   const detailReady = detail.status === "available";
+  const [nameExpanded, setNameExpanded] = useState(false);
+  const nameRef = useRef<HTMLHeadingElement>(null);
+  const [nameOverflows, setNameOverflows] = useState(false);
+
+  useEffect(() => {
+    // Reset expansion + re-measure overflow whenever the selected protein changes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setNameExpanded(false);
+    const el = nameRef.current;
+    // A clamp-and-measure check (not just character count) — some very long
+    // names still fit within 3 lines at this panel's width, and some short but
+    // unusually wide names (e.g. no wrap-friendly spaces) can still overflow.
+    setNameOverflows(!!el && (el.scrollHeight > el.clientHeight + 1 || protein.name.length > NAME_EXPAND_THRESHOLD));
+  }, [protein.id, protein.name]);
 
   return (
     <div className="hx-identity hx-glass">
@@ -40,7 +56,12 @@ export function IdentityPanel({ protein, detail, tab, onSetTab, threadsOn, onTog
             <button className="hx-identity-close mono" onClick={onClose} aria-label="Close and return one level">✕</button>
           </div>
         </div>
-        <h1 className="hx-identity-name serif">{protein.name}</h1>
+        <h1 ref={nameRef} className={`hx-identity-name serif ${nameExpanded ? "expanded" : ""}`} title={protein.name}>{protein.name}</h1>
+        {nameOverflows && (
+          <button className="hx-identity-name-toggle mono" onClick={() => setNameExpanded((current) => !current)}>
+            {nameExpanded ? "SHOW LESS" : "SHOW FULL NAME"}
+          </button>
+        )}
         <div className="hx-identity-organism">{protein.organism}</div>
         <div className="hx-evidence-chip" style={{ borderColor: predicted ? "var(--evidence-predicted)" : "var(--teal)" }}>
           <span className={`hx-evidence-dot ${predicted ? "predicted" : "experimental"}`} style={{ background: predicted ? "var(--evidence-predicted)" : "var(--teal)" }} />

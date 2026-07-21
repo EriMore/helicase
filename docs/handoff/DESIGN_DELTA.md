@@ -155,3 +155,73 @@ Deviations from `docs/design/final/` and the exported Claude Design prototype, d
 **Impact:** The Design panel now visibly changes across beats instead of showing a static structure throughout; the honest evidence gates are preserved and improved rather than removed.
 
 **Temporary:** Yes — sourcing a real RFdiffusion backbone trajectory and/or real AlphaFold2/ESMFold predictions for the two candidate sequences (with verified residue-numbering correspondence to 6EHB) is the correct follow-up to fully satisfy this request; explicitly deferred per the user's own "we'll build this out completely later."
+
+---
+
+## 12. "Territory" renamed to "Cluster" throughout; Neighbourhood depth level removed
+
+**Target:** `DESIGN_TARGET.md`/`UI_INTEGRATION_HANDOFF.md`/`SCREEN_STATE_MATRIX.md` use "Territory" and "Neighbourhood" as the design package's literal vocabulary for depth levels 2 and 3 of the 5-level hierarchy.
+
+**Implemented:** Explicit user instruction for this pass: rename "Territory" to "Cluster" everywhere in product copy, code identifiers, tests, and accessibility text, and remove the Neighbourhood depth level entirely. Final hierarchy is now Universe → Cluster → Protein → Structure → De novo (De novo added as its own Depth Rail row for the precomputed design journey, previously folded into Structure). `src/domain/territories.ts` was renamed to `src/domain/clusters.ts` (`clusters`/`ClusterId`/`clusterCenter`/`clusterIndexForRegion`); `SceneMode`'s `"territory"` became `"cluster"`, `ENTER_TERRITORY`→`ENTER_CLUSTER`, `state.territoryId`→`state.clusterId`, the copilot tool `focus_territory`→`focus_cluster`. The unrelated, pre-existing `AtlasCluster` type (`atlas-data.ts`) — a much finer-grained annotation-family grouping from the offline ingestion pipeline, used only for shard load-priority ordering — was deliberately left alone and not renamed; `clusters.ts` documents the distinction inline so the two "cluster" concepts aren't confused later. Entering a cluster now also *hides* (not just dims) proteins outside it — a new `uClusterHide` shader uniform — so only the active cluster's proteins (plus any verified-related protein revealed via relationship threads) remain visible, matching the explicit "show only proteins belonging to that cluster" requirement. The cluster label's screen-space position no longer carries the old vertical offset that pushed it away from true viewport center; it now lands exactly where the camera is targeted, so the selected cluster reads as centered.
+
+**Reason:** Direct, explicit user instruction, including the specific final hierarchy. The Neighbourhood level had no distinct implementation behind it in this codebase already (see `CURRENT_STATE.md` bugfix round 2: its only concrete feature, a pooled auto-label system, was removed in round 2 for conflicting with "no protein name unless hovering") — the Depth Rail's Neighbourhood row was already dead, unclickable chrome, so removing it deletes chrome, not capability.
+
+**Impact:** Every "Territory"-branded label, aria text, test, and copilot tool argument now reads "Cluster." `docs/design/final/*.md` and the frozen `prototypes/claude-design-final/Helicase Atlas.dc.html` reference package are left untouched — they describe the original exported design's literal vocabulary and remain the visual/interaction fidelity source of truth; this rename is a deliberate, recorded product-copy override on top of it, the same category of deviation as items 7–10 above.
+
+**Temporary:** No — an explicit, permanent renaming instruction, not a placeholder.
+
+---
+
+## 13. Query interaction: non-matches are hidden from interaction, not just dimmed; light-mode query contrast raised independently of dark mode
+
+**Target:** No prior explicit contract distinguished "dimmed" from "non-interactive" for query non-matches; `dimNon` (0.30 light / 0.26 dark) doubled as both the visual dim and the only differentiation between hits and non-hits.
+
+**Implemented:** A new `queryDimNon` per-theme constant separate from the existing `dimNon` (light: 0.08, a substantially higher-contrast dim than the prior 0.30; dark: 0.26, deliberately unchanged). While a query is active, hovering, selecting, and the hover name-label are all gated to query hits only (`WorldCanvas.tsx`'s `pickProtein()` and `projectLabels()` check the live query-result set) — a non-hit point is inert until the query clears.
+
+**Reason:** Explicit user instruction to raise light-mode hit/non-hit contrast specifically (not dark mode) and to make non-hits fully non-interactive while a query is active.
+
+**Impact:** Dark-mode query contrast and all non-query dimming (cluster focus, single selection) are unchanged. Light-mode query non-matches now read as clearly secondary; clicking or hovering one does nothing until Clear.
+
+**Temporary:** No — permanent, explicit product behavior.
+
+---
+
+## 14. Structure/Design field fade deepened; petri dish fades with it
+
+**Target:** No prior numeric target existed for "the field must not compete with the model" beyond the existing 0.24 (Inspect) / 0.06 (Design) dim values recorded as already-reconciled in item 6.
+
+**Implemented:** Inspect's field dim lowered from 0.24 to 0.10 and Design's from 0.06 to 0.03; the petri-dish selection marker's opacity is now multiplied by the same live dim factor each frame instead of holding a constant 0.85, so it recedes alongside the field rather than staying bright against a nearly-invisible backdrop.
+
+**Reason:** Explicit user instruction that the field must fade "substantially" in Structure view while preserving "a faint sense of spatial continuity" — the prior 0.24 in particular still read as competing with the molecular model in dense/dark clusters.
+
+**Impact:** Purely a numeric/timing change to existing, already-smoothed uniforms; no new mechanism. Reverts automatically on return to Universe/Glance via the same existing per-frame lerp.
+
+**Temporary:** No.
+
+---
+
+## 15. Procedural Motion (Wiggle / Uncertainty Wiggle) added alongside the existing Rotate control
+
+**Target:** `IMPLEMENTATION_GAP_MATRIX.md`/item 10 above establish an honest camera-orbit "Rotate" (Mol* trackball `spin`) as the only motion affordance, explicitly not a dynamics simulation.
+
+**Implemented:** A new "Procedural Motion" block in Inspect, separate from Rotate: `WIGGLE` uses Mol*'s real trackball `rock` animate mode (a back-and-forth oscillation, distinct from `spin`) at a fixed speed/angle; `UNCERTAINTY WIGGLE` uses the same `rock` mode but scales its speed and angle from the structure's real, already-resolved mean AlphaFold pLDDT (lower confidence → wider, faster rock) — disabled with an explanatory tooltip whenever verified confidence isn't available (experimental structures, or predicted structures still resolving). A `STOP` control resets to off. Rotate and the two Wiggle modes are mutually exclusive (Mol*'s trackball can only run one `animate` mode at a time).
+
+**Reason:** Explicit instruction to add procedural motion beyond Rotate, honestly, including a confidence-driven variant, using Mol*'s own supported animation API rather than fabricating per-atom dynamics.
+
+**Impact:** Purely additive UI + a `motion` prop replacing the old boolean `autoRotate` prop on `StructureView`; no per-residue data invented — Uncertainty Wiggle's amplitude is a direct, documented function of the same mean pLDDT already shown in the Confidence X-ray panel.
+
+**Temporary:** No.
+
+---
+
+## 16. First-run onboarding walkthrough
+
+**Target:** No prior screen or component existed for this; `docs/design/final/` does not specify an onboarding surface.
+
+**Implemented:** A 9-step, keyboard-accessible walkthrough (`src/components/Onboarding.tsx`, `src/hooks/useOnboarding.ts`) covering orbit, pan, zoom, hover/select, entering a cluster, selecting a protein, Depth navigation, Query, and Ask Atlas. Auto-opens once for a first-time visitor after the Atlas finishes loading (gated on a `localStorage` completion flag, same persistence pattern as theme/sound), with Next/Back/Skip/Finish and Escape/Arrow-key navigation. A `GUIDE ?` button in the header replays it on demand at any time without affecting the persisted completion state. It renders as a dismissible, centered glass panel (`hx-glass`, matching every other Atlas panel's visual language) over a light scrim — never a permanent fixture, and stylistically consistent with the rest of the shell rather than a generic product-tour widget.
+
+**Reason:** Explicit requirement for a first-run walkthrough with a specific list of covered interactions and UX constraints (Next/Back/Skip/Finish, keyboard accessible, persisted, replayable, non-obstructive, on-brand).
+
+**Impact:** Purely additive. No existing state, route, or component was changed to accommodate it beyond wiring one new hook and one new header button.
+
+**Temporary:** No.

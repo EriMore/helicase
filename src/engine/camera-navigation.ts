@@ -7,7 +7,7 @@ import * as THREE from "three";
  * per-transition duration table on a single easeInOutCubic curve.
  */
 
-export type DepthLevel = "universe" | "territory" | "protein";
+export type DepthLevel = "universe" | "cluster" | "protein";
 export type SphericalSnapshot = { target: [number, number, number]; r: number; theta: number; phi: number };
 type Spherical = { target: THREE.Vector3; r: number; theta: number; phi: number };
 type Tween = { t0: number; dur: number; from: Spherical; to: Spherical };
@@ -24,18 +24,18 @@ const AMBIENT_IDLE_MS = 3500;
 const AMBIENT_RAD_PER_SEC = 0.00022 * 60;
 const FOLLOW_RATE = 5.0;
 // r:640 is MOTION_AND_CAMERA_SPEC.md's literal arrival distance, tuned against
-// the design prototype's evenly-sized synthetic territories. The real corpus's
-// six territories are genuinely uneven in size (Catalysis & Metabolism, a
-// broad annotation catch-all, is markedly denser than the others) — an honest
-// reflection of the actual reviewed-corpus distribution, not a bug. r:900
-// gives every territory room to read as distinct at arrival instead of the
-// largest one dominating the frame. See docs/handoff/DESIGN_DELTA.md.
+// the design prototype's evenly-sized synthetic territories (this codebase's
+// clusters). The real corpus's six clusters are genuinely uneven in size
+// (Catalysis & Metabolism, a broad annotation catch-all, is markedly denser
+// than the others) — an honest reflection of the actual reviewed-corpus
+// distribution, not a bug. r:900 gives every cluster room to read as distinct
+// at arrival instead of the largest one dominating the frame. See
+// docs/handoff/DESIGN_DELTA.md.
 const DEFAULT_HOME: Spherical = { target: new THREE.Vector3(0, 0, 0), r: 900, theta: 0.7, phi: 1.12 };
 
 export const TWEEN_MS = {
   selectProtein: 1600,
   enterTerritoryCamera: 1500,
-  enterTerritoryReflow: 1400,
   inspectStructure: 1500,
   startDesign: 1400,
   returnToGlance: 1300,

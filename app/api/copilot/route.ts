@@ -5,7 +5,7 @@ import { z } from "zod";
 const requestSchema = z.object({
   message: z.string().trim().min(1).max(2_000),
   scene: z.object({
-    mode: z.string().max(40), territoryId: z.string().max(48).nullable(), query: z.string().max(240), indexedProteins: z.number().int().nonnegative(),
+    mode: z.string().max(40), clusterId: z.string().max(48).nullable(), query: z.string().max(240), indexedProteins: z.number().int().nonnegative(),
     representation: z.enum(["cartoon", "surface", "ball-and-stick", "spacefill"]),
     ligandsVisible: z.boolean(),
     confidenceXray: z.boolean(),
@@ -24,7 +24,7 @@ type CopilotEvent =
   | { type: "done" }
   | { type: "error"; message: string; retryable: boolean };
 
-const systemInstruction = `You are Atlas, a concise and rigorous structural-biology navigator inside a spatial protein universe with five depth levels: Universe, Territory, Neighbourhood, Protein (Glance), and Structure.
+const systemInstruction = `You are Atlas, a concise and rigorous structural-biology navigator inside a spatial protein universe with five depth levels: Universe, Cluster, Protein (Glance), Structure, and De novo (the precomputed design journey).
 Ground claims only in supplied context. Distinguish source records, computed annotation-family proximity, predictions, and hypotheses.
 Use bounded tools for every scene mutation. Prose can never mutate the scene.
 Never call annotation proximity structural similarity. Never imply that the 75,000 staged proteins are the complete reviewed corpus.

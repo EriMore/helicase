@@ -4,8 +4,8 @@ const vec3Schema = z.tuple([z.number().finite(), z.number().finite(), z.number()
 
 export const sceneCommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("SELECT_PROTEIN"), proteinId: z.string().min(1).max(40) }).strict(),
-  z.object({ type: z.literal("ENTER_TERRITORY"), territoryId: z.string().min(1).max(48) }).strict(),
-  z.object({ type: z.literal("NAV_TO_LEVEL"), level: z.enum(["universe", "territory", "protein", "structure"]) }).strict(),
+  z.object({ type: z.literal("ENTER_CLUSTER"), clusterId: z.string().min(1).max(48) }).strict(),
+  z.object({ type: z.literal("NAV_TO_LEVEL"), level: z.enum(["universe", "cluster", "protein", "structure"]) }).strict(),
   z.object({ type: z.literal("RETURN_ONE_LEVEL") }).strict(),
   z.object({ type: z.literal("RETURN_TO_UNIVERSE") }).strict(),
   z.object({ type: z.literal("QUERY_ATLAS"), query: z.string().max(240), resultIds: z.array(z.string().max(40)).max(500) }).strict(),
@@ -38,7 +38,7 @@ export const structureReferenceSchema = z.object({
 export const atlasProteinSchema = z.object({
   id: z.string().min(1).max(40),
   entry: z.string().max(64),
-  name: z.string().min(1).max(256),
+  name: z.string().min(1).max(320),
   organism: z.string().max(180),
   taxonomyId: z.number().int().positive().nullable(),
   length: z.number().int().nonnegative(),

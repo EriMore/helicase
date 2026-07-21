@@ -2,6 +2,7 @@
 
 import type { AtlasProtein } from "@/domain/atlas-data";
 import type { StructureColorMode, StructureRepresentation } from "@/domain/atlas";
+import type { MotionMode } from "./StructureView";
 import type { ConfidenceLoadState } from "@/hooks/useStructureConfidence";
 import type { StructureMetadataState } from "@/hooks/useStructureMetadata";
 
@@ -26,11 +27,12 @@ type InspectPanelProps = {
   onOpenSequence: () => void;
   canDesign: boolean;
   onStartDesign: () => void;
-  autoRotate: boolean;
-  onToggleAutoRotate: () => void;
+  motionMode: MotionMode;
+  onSetMotion: (mode: MotionMode) => void;
+  confidenceAvailable: boolean;
 };
 
-export function InspectPanel({ protein, representation, onSetRepresentation, colorMode, onSetColorMode, ligandsVisible, onToggleLigands, confidenceXray, onToggleConfidenceXray, confidence, structureMetadata, seqOpen, onOpenSequence, canDesign, onStartDesign, autoRotate, onToggleAutoRotate }: InspectPanelProps) {
+export function InspectPanel({ protein, representation, onSetRepresentation, colorMode, onSetColorMode, ligandsVisible, onToggleLigands, confidenceXray, onToggleConfidenceXray, confidence, structureMetadata, seqOpen, onOpenSequence, canDesign, onStartDesign, motionMode, onSetMotion, confidenceAvailable }: InspectPanelProps) {
   const predicted = protein.structure.kind === "predicted";
   const confLabel = predicted
     ? confidence.status === "available" ? `Confidence X-ray · mean pLDDT ${confidence.data.mean.toFixed(1)}` : confidence.status === "loading" ? "Resolving AlphaFold confidence…" : confidence.status === "failed" ? confidence.error : "Confidence unavailable"
@@ -73,8 +75,25 @@ export function InspectPanel({ protein, representation, onSetRepresentation, col
         <div className="hx-chip-row" style={{ marginTop: 8 }}>
           <button className={`hx-chip mono ${ligandsVisible ? "active" : ""}`} onClick={onToggleLigands}>LIGANDS {ligandsVisible ? "●" : "○"}</button>
           <button className="hx-chip mono" onClick={() => onSetColorMode(colorMode === "chain" ? "domain" : "chain")}>COLOR · {colorMode.toUpperCase()}</button>
-          <button className={`hx-chip mono ${autoRotate ? "active" : ""}`} onClick={onToggleAutoRotate} title="Slow camera-orbit spin — not a molecular-dynamics simulation">ROTATE {autoRotate ? "●" : "○"}</button>
+          <button className={`hx-chip mono ${motionMode === "rotate" ? "active" : ""}`} onClick={() => onSetMotion(motionMode === "rotate" ? "off" : "rotate")} title="Slow camera-orbit spin — not a molecular-dynamics simulation">ROTATE {motionMode === "rotate" ? "●" : "○"}</button>
         </div>
+      </div>
+
+      <div className="hx-inspect-block">
+        <div className="hx-block-title mono">PROCEDURAL MOTION</div>
+        <div className="hx-chip-row">
+          <button className={`hx-chip mono ${motionMode === "wiggle" ? "active" : ""}`} onClick={() => onSetMotion(motionMode === "wiggle" ? "off" : "wiggle")} title="A rocking camera motion — not a molecular-dynamics simulation">WIGGLE {motionMode === "wiggle" ? "●" : "○"}</button>
+          <button
+            className={`hx-chip mono ${motionMode === "uncertaintyWiggle" ? "active" : ""}`}
+            onClick={() => onSetMotion(motionMode === "uncertaintyWiggle" ? "off" : "uncertaintyWiggle")}
+            disabled={!confidenceAvailable}
+            title={confidenceAvailable ? "Rock speed and angle scale with this structure's real mean AlphaFold pLDDT — lower confidence rocks wider and faster" : "Unavailable — no verified per-residue confidence data for this structure"}
+          >
+            UNCERTAINTY WIGGLE {motionMode === "uncertaintyWiggle" ? "●" : "○"}
+          </button>
+          <button className="hx-chip mono" onClick={() => onSetMotion("off")} disabled={motionMode === "off"}>STOP</button>
+        </div>
+        {!confidenceAvailable && <p style={{ fontSize: 9, color: "var(--ink-faint)", marginTop: 8, lineHeight: 1.5 }}>Uncertainty Wiggle needs verified per-residue confidence — unavailable for experimental structures and while prediction confidence is still resolving.</p>}
       </div>
 
       <div className="hx-inspect-block">

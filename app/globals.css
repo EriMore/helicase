@@ -174,17 +174,15 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
 .hx-canvas-layer { z-index: 0; pointer-events: auto; touch-action: none; user-select: none; }
 .hx-labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 6; user-select: none; }
 .hx-label { position: absolute; transform: translate(-50%, -50%); white-space: nowrap; transition: opacity .5s; text-align: center; }
-.hx-label-territory { pointer-events: auto; cursor: pointer; padding: 12px 20px; border-radius: 5px !important; transition: opacity .5s, border-color .25s, background .25s; }
-.hx-label-territory:hover { border-color: var(--teal); }
+.hx-label-cluster { pointer-events: auto; cursor: pointer; padding: 12px 20px; border-radius: 5px !important; transition: opacity .5s, border-color .25s, background .25s; }
+.hx-label-cluster:hover { border-color: var(--teal); }
 .hx-label-eyebrow { font-size: 8.5px; letter-spacing: .24em; color: var(--ink-faint); }
 .hx-label-name { font-size: 16px; margin-top: 2px; }
 .hx-label-enter { font-size: 8px; letter-spacing: .1em; color: var(--teal); margin-top: 2px; opacity: 0; transition: opacity .2s; }
-.hx-label-territory:hover .hx-label-enter { opacity: 1; }
+.hx-label-cluster:hover .hx-label-enter { opacity: 1; }
 .hx-label-hero { transform: translate(-50%, -150%); pointer-events: none; max-width: 260px; }
 .hx-label-hero-id { font-size: 9px; letter-spacing: .16em; color: var(--ink-faint); }
 .hx-label-hero-name { font-size: 12px; margin-top: 1px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hx-label-neighbour { z-index: 5; }
-.hx-label-neighbour .hx-label-hero-name { font-size: 11px; }
 
 .hx-scrim-top { position: absolute; top: 0; left: 0; right: 0; height: 150px; pointer-events: none; background: var(--scrim-top); z-index: 8; }
 .hx-scrim-bot { position: absolute; bottom: 0; left: 0; right: 0; height: 120px; pointer-events: none; background: var(--scrim-bot); z-index: 8; }
@@ -212,13 +210,26 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
    --------------------------------------------------------- */
 .hx-rail { position: absolute; left: 26px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 2px; z-index: 20; padding: 12px; transition: opacity .5s; }
 .hx-rail-title { font-size: 8.5px; letter-spacing: .28em; color: var(--ink-faint); margin: 0 4px 8px; }
-.hx-rail-level { display: flex; align-items: flex-start; gap: 9px; padding: 6px 5px; min-height: 26px; border: 0; background: none; text-align: left; width: 100%; }
+.hx-rail-level { display: flex; align-items: flex-start; gap: 9px; padding: 6px 5px; min-height: 26px; border: 0; border-radius: 2px; background: none; text-align: left; width: 100%; transition: background .2s; }
 .hx-rail-dotwrap { display: flex; flex-direction: column; align-items: center; padding-top: 3px; flex: none; }
 .hx-rail-dot { width: 7px; height: 7px; border-radius: 50%; transition: all .4s; flex: none; border: 1px solid var(--glass-brd); }
 .hx-rail-textwrap { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.hx-rail-label { font-size: 9px; letter-spacing: .2em; transition: color .3s; white-space: nowrap; display: inline-block; }
-.hx-rail-level:hover .hx-rail-label { color: var(--ink); animation: hx-rail-glitch .4s ease both; }
-.hx-rail-level:hover .hx-rail-dot { box-shadow: 0 0 7px var(--teal); }
+.hx-rail-label { font-size: 9px; letter-spacing: .2em; transition: color .3s, opacity .3s; white-space: nowrap; display: inline-block; }
+
+/* Active / available / unavailable are visually distinct at rest, and hover
+   only ever brightens a level that is actually reachable — an unavailable
+   level (e.g. De novo before a design is started) never responds to hover. */
+.hx-rail-level--active .hx-rail-dot { background: var(--teal); border-color: var(--teal); box-shadow: 0 0 6px var(--teal); }
+.hx-rail-level--active .hx-rail-label { color: var(--ink); opacity: 1; font-weight: 600; }
+.hx-rail-level--available .hx-rail-dot { background: var(--ink-soft); border-color: var(--glass-brd); }
+.hx-rail-level--available .hx-rail-label { color: var(--ink-soft); opacity: 0.85; }
+.hx-rail-level--unavailable .hx-rail-dot { background: transparent; border-color: var(--glass-brd); }
+.hx-rail-level--unavailable .hx-rail-label { color: var(--ink-faint); opacity: 0.55; }
+.hx-rail-level--unavailable { cursor: default; pointer-events: none; }
+
+.hx-rail-level--available:hover, .hx-rail-level--active:hover { background: var(--line); cursor: pointer; }
+.hx-rail-level--available:hover .hx-rail-label { color: var(--ink); opacity: 1; animation: hx-rail-glitch .4s ease both; }
+.hx-rail-level--available:hover .hx-rail-dot, .hx-rail-level--active:hover .hx-rail-dot { box-shadow: 0 0 7px var(--teal); }
 @keyframes hx-rail-glitch {
   0% { transform: translate(0, 0); letter-spacing: .2em; opacity: .55; }
   18% { transform: translate(-1.5px, .5px); letter-spacing: .26em; opacity: .8; text-shadow: 1px 0 var(--teal), -1px 0 var(--thread-interaction); }
@@ -234,7 +245,7 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
    Query bar
    --------------------------------------------------------- */
 /* pointer-events:none on the wrapper so empty flex-gap space doesn't swallow
-   clicks meant for territory labels that project underneath it — only the
+   clicks meant for cluster labels that project underneath it — only the
    actual glass panel and chip buttons (given their own pointer-events:auto
    below) are interactive. */
 .hx-query-wrap { position: absolute; top: 78px; right: 26px; width: min(660px, 66vw); z-index: 22; animation: hx-rise .5s ease both; pointer-events: none; }
@@ -264,7 +275,9 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
 .hx-identity-gene { font-size: 9px; letter-spacing: .14em; color: var(--ink-faint); }
 .hx-identity-close { flex: none; width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--glass-brd); display: flex; align-items: center; justify-content: center; padding: 0; line-height: 1; font-size: 11px; color: var(--ink-soft); transition: color .2s, border-color .2s; }
 .hx-identity-close:hover { color: var(--ink); border-color: var(--ink-soft); }
-.hx-identity-name { font-family: var(--font-spectral), serif; font-weight: 400; font-size: 30px; line-height: 1.1; letter-spacing: -.01em; color: var(--ink); margin: 12px 0 6px; text-wrap: pretty; }
+.hx-identity-name { font-family: var(--font-spectral), serif; font-weight: 400; font-size: 30px; line-height: 1.1; letter-spacing: -.01em; color: var(--ink); margin: 12px 0 6px; text-wrap: pretty; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+.hx-identity-name.expanded { -webkit-line-clamp: unset; overflow: visible; }
+.hx-identity-name-toggle { display: block; font-size: 9px; letter-spacing: .1em; color: var(--teal); background: none; border: 0; padding: 0 0 10px; }
 .hx-identity-organism { font-family: var(--font-spectral), serif; font-style: italic; font-size: 14px; color: var(--ink-soft); margin-bottom: 16px; }
 .hx-evidence-chip { display: inline-flex; align-items: center; gap: 8px; padding: 5px 10px; border-radius: 2px; margin-bottom: 18px; border: 1px solid; }
 .hx-evidence-dot { width: 6px; height: 6px; }
@@ -506,6 +519,23 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
 .fatal-recovery h1 { max-width: 720px; margin: 0; font-family: var(--font-spectral), serif; font-size: clamp(34px, 5vw, 72px); font-weight: 400; }
 .fatal-recovery p { max-width: 620px; color: var(--ink-soft); }
 .fatal-recovery button { width: max-content; border: 1px solid var(--glass-brd); background: transparent; color: var(--ink); padding: 12px 16px; border-radius: 2px; }
+
+/* ---------------------------------------------------------
+   Onboarding walkthrough
+   --------------------------------------------------------- */
+.hx-onboard-scrim { position: absolute; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; background: var(--scrim); pointer-events: auto; }
+.hx-onboard { width: min(420px, 84vw); padding: 22px 24px; animation: hx-rise .3s ease both; user-select: text; }
+.hx-onboard-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+.hx-onboard-eyebrow { font-size: 9px; letter-spacing: .22em; color: var(--teal); }
+.hx-onboard-skip { font-size: 9px; letter-spacing: .08em; color: var(--ink-soft); background: none; border: 0; }
+.hx-onboard-skip:hover { color: var(--ink); }
+.hx-onboard-title { font-size: 24px; font-weight: 400; color: var(--ink); margin: 0 0 8px; }
+.hx-onboard-body { font-family: var(--font-spectral), serif; font-size: 14.5px; line-height: 1.55; color: var(--ink-soft); margin: 0 0 18px; text-wrap: pretty; }
+.hx-onboard-dots { display: flex; gap: 6px; margin-bottom: 18px; }
+.hx-onboard-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--glass-brd); }
+.hx-onboard-dot.active { background: var(--teal); }
+.hx-onboard-controls { display: flex; gap: 8px; }
+.hx-onboard-controls .hx-btn-secondary, .hx-onboard-controls .hx-btn-teal { flex: 1; text-align: center; font-size: 10px; letter-spacing: .12em; padding: 10px; }
 
 /* ---------------------------------------------------------
    Responsive

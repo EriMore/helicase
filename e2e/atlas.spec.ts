@@ -5,6 +5,10 @@ const ATLAS_LOAD_TIMEOUT = 60_000;
 async function waitForAtlasReady(page: import("@playwright/test").Page) {
   await page.goto("/");
   await page.waitForSelector(".hx-loading", { state: "detached", timeout: ATLAS_LOAD_TIMEOUT });
+  // First-run onboarding auto-opens once the Atlas is ready; dismiss it so the
+  // rest of a test isn't blocked by its scrim.
+  const skip = page.locator(".hx-onboard-skip");
+  if (await skip.isVisible().catch(() => false)) await skip.click();
 }
 
 test.describe("Helicase Atlas — core shell", () => {
@@ -40,13 +44,13 @@ test.describe("Helicase Atlas — core shell", () => {
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   });
 
-  test("entering a territory expands the depth rail and shows a return hint", async ({ page }) => {
+  test("entering a cluster expands the depth rail and shows a return hint", async ({ page }) => {
     await waitForAtlasReady(page);
-    await page.locator(".hx-label-territory").first().click({ force: true });
-    await expect(page.locator(".hx-rail-level").nth(1)).toContainText("TERRITORY");
+    await page.locator(".hx-label-cluster").first().click({ force: true });
+    await expect(page.locator(".hx-rail-level").nth(1)).toContainText("CLUSTER");
     await expect(page.locator(".hx-rail-sub").first()).toBeVisible();
     await page.keyboard.press("Escape");
-    await expect(page.locator(".hx-rail-hint")).toContainText("Click a territory to enter");
+    await expect(page.locator(".hx-rail-hint")).toContainText("Click a cluster to enter");
   });
 
   test("deterministic query shows a result count distinct from Ask Atlas", async ({ page }) => {
@@ -76,5 +80,21 @@ test.describe("Helicase Atlas — core shell", () => {
     await page.reload();
     await page.waitForSelector(".hx-loading", { state: "detached", timeout: ATLAS_LOAD_TIMEOUT });
     await expect(page.locator(".hx-toggle").first()).toContainText("SOUND ●");
+  });
+
+  test("onboarding walks through, skips, and can be replayed from the header", async ({ page }) => {
+    await page.goto("/");
+    await page.waitForSelector(".hx-loading", { state: "detached", timeout: ATLAS_LOAD_TIMEOUT });
+    await expect(page.locator(".hx-onboard")).toBeVisible();
+    await expect(page.locator(".hx-onboard-eyebrow")).toContainText("1 / 9");
+    await page.locator(".hx-onboard-controls .hx-btn-teal").click();
+    await expect(page.locator(".hx-onboard-eyebrow")).toContainText("2 / 9");
+    await page.locator(".hx-onboard-skip").click();
+    await expect(page.locator(".hx-onboard")).toHaveCount(0);
+    await page.reload();
+    await page.waitForSelector(".hx-loading", { state: "detached", timeout: ATLAS_LOAD_TIMEOUT });
+    await expect(page.locator(".hx-onboard")).toHaveCount(0);
+    await page.getByRole("button", { name: /replay the atlas walkthrough/i }).click();
+    await expect(page.locator(".hx-onboard")).toBeVisible();
   });
 });

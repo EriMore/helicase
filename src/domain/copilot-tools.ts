@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { territories } from "./territories";
+import { clusters } from "./clusters";
 
-const territoryIds = territories.map((territory) => territory.id) as [string, ...string[]];
+const clusterIds = clusters.map((cluster) => cluster.id) as [string, ...string[]];
 
 /**
  * The bounded, strongly-typed tool surface GPT-5.6 drives the SceneController through.
@@ -11,7 +11,7 @@ const territoryIds = territories.map((territory) => territory.id) as [string, ..
  */
 export const copilotToolArgumentSchemas = {
   query_atlas: z.object({ query: z.string().trim().min(1).max(240) }).strict(),
-  focus_territory: z.object({ territory_id: z.enum(territoryIds) }).strict(),
+  focus_cluster: z.object({ cluster_id: z.enum(clusterIds) }).strict(),
   select_protein: z.object({ protein_id: z.string().trim().min(1).max(40) }).strict(),
   inspect_structure: z.object({}).strict(),
   set_confidence_xray: z.object({ visible: z.boolean() }).strict(),
@@ -28,7 +28,7 @@ const objectSchema = (properties: Record<string, unknown>, required: string[]) =
 
 export const copilotTools = [
   { type: "function", name: "query_atlas", description: "Search reviewed proteins and express results spatially in the Universe.", strict: true, parameters: objectSchema({ query: { type: "string" } }, ["query"]) },
-  { type: "function", name: "focus_territory", description: "Enter a functional territory of the Atlas.", strict: true, parameters: objectSchema({ territory_id: { type: "string", enum: territoryIds } }, ["territory_id"]) },
+  { type: "function", name: "focus_cluster", description: "Enter a functional cluster of the Atlas.", strict: true, parameters: objectSchema({ cluster_id: { type: "string", enum: clusterIds } }, ["cluster_id"]) },
   { type: "function", name: "select_protein", description: "Select an exact protein accession already present in scene context and open its identity panel (Glance).", strict: true, parameters: objectSchema({ protein_id: { type: "string" } }, ["protein_id"]) },
   { type: "function", name: "inspect_structure", description: "Mount the real Mol* structure viewport for the currently selected protein.", strict: true, parameters: objectSchema({}, []) },
   { type: "function", name: "set_confidence_xray", description: "Toggle verified per-residue AlphaFold pLDDT coloring. Only valid for predicted structures.", strict: true, parameters: objectSchema({ visible: { type: "boolean" } }, ["visible"]) },

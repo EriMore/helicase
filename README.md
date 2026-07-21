@@ -13,6 +13,7 @@ Helicase Atlas is a browser-native scientific instrument for navigating a spatia
 - Cartoon, molecular-surface, ball-and-stick, ligand, and residue-range focus controls behind the structure adapter.
 - An attributable precomputed ProteinMPNN sequence-redesign journey for UniProt A5F934 / PDB 6EHB. It stops before unsupported structure, affinity, or wet-lab validation claims.
 - Streamed GPT-5.6 Responses API integration with strict runtime-validated scene tools and an explicit offline fallback.
+- Real relationship threads with camera fit-to-view, an honest camera-orbit Rotate control plus confidence-scaled Procedural Motion (Wiggle / Uncertainty Wiggle), and a keyboard-accessible, replayable first-run walkthrough.
 
 ## Run locally
 
