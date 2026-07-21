@@ -5,15 +5,16 @@ import { z } from "zod";
 const requestSchema = z.object({
   message: z.string().trim().min(1).max(2_000),
   scene: z.object({
-    mode: z.string().max(40), query: z.string().max(240), indexedProteins: z.number().int().nonnegative(),
-    camera: z.object({ position: z.tuple([z.number(), z.number(), z.number()]), target: z.tuple([z.number(), z.number(), z.number()]), scale: z.enum(["universe", "region", "cluster", "protein"]) }).nullable(),
-    representation: z.enum(["cartoon", "surface", "ball-and-stick"]),
+    mode: z.string().max(40), territoryId: z.string().max(48).nullable(), query: z.string().max(240), indexedProteins: z.number().int().nonnegative(),
+    representation: z.enum(["cartoon", "surface", "ball-and-stick", "spacefill"]),
     ligandsVisible: z.boolean(),
+    confidenceXray: z.boolean(),
+    threadsOn: z.boolean(),
     residueFocus: z.object({ start: z.number().int(), end: z.number().int(), chain: z.string().optional(), requestId: z.number().int().nonnegative() }).nullable(),
   }).strict(),
   protein: atlasProteinSchema.nullable(),
   confidence: z.object({ status: z.string(), metric: z.string().optional(), mean: z.number().optional(), lowConfidenceRanges: z.array(z.tuple([z.number().int(), z.number().int()])).optional() }).optional(),
-  design: z.object({ status: z.string(), trajectoryId: z.string().nullable(), stageIndex: z.number().int().nonnegative() }).optional(),
+  design: z.object({ status: z.string(), trajectoryId: z.string().nullable(), progress: z.number().min(0).max(1) }).optional(),
 }).strict();
 
 type CopilotEvent =
@@ -23,18 +24,19 @@ type CopilotEvent =
   | { type: "done" }
   | { type: "error"; message: string; retryable: boolean };
 
-const systemInstruction = `You are Atlas, a concise and rigorous structural-biology navigator inside a spatial protein universe.
+const systemInstruction = `You are Atlas, a concise and rigorous structural-biology navigator inside a spatial protein universe with five depth levels: Universe, Territory, Neighbourhood, Protein (Glance), and Structure.
 Ground claims only in supplied context. Distinguish source records, computed annotation-family proximity, predictions, and hypotheses.
 Use bounded tools for every scene mutation. Prose can never mutate the scene.
 Never call annotation proximity structural similarity. Never imply that the 75,000 staged proteins are the complete reviewed corpus.
-AlphaFold pLDDT applies only to predicted structures. The available 6EHB ProteinMPNN journey is precomputed sequence redesign, not binder generation, affinity validation, or wet-lab evidence.`;
+Relationship threads come only from real annotations, databases, or computed similarity that the scene already carries — explain and traverse them, never invent one.
+AlphaFold pLDDT applies only to predicted structures. The available 6EHB ProteinMPNN journey is precomputed sequence redesign, not binder generation, affinity validation, or wet-lab evidence — say so plainly whenever it comes up.`;
 
 const encode = (event: CopilotEvent) => `${JSON.stringify(event)}\n`;
 
 function fallback(message: string, proteinId: string | undefined): { text: string; calls: CopilotToolCall[] } {
   const calls: CopilotToolCall[] = [];
   if (/back|return|universe|zoom out/i.test(message)) calls.push({ name: "return_to_universe", arguments: {} });
-  else if (/design|redesign|candidate/i.test(message) && proteinId === "A5F934") calls.push({ name: "start_design_journey", arguments: { trajectory_id: "proteinmpnn-6ehb-example-6" } });
+  else if (/design|redesign|candidate/i.test(message) && proteinId === "A5F934") calls.push({ name: "start_design", arguments: { trajectory_id: "proteinmpnn-6ehb-example-6" } });
   else if (/show|find|search|where|proteins?|family|organism|enzyme|membrane|viral|receptor|transport/i.test(message)) calls.push({ name: "query_atlas", arguments: { query: message.slice(0, 240) } });
   const text = /design|redesign|candidate/i.test(message)
     ? proteinId === "A5F934" ? "Opening the attributable, precomputed ProteinMPNN 6EHB sequence-redesign journey." : "The imported design journey is eligible only for the sourced 6EHB target, UniProt A5F934."

@@ -8,28 +8,48 @@ import { MAQualityAssessment, QualityAssessmentPLDDTPreset } from "molstar/lib/e
 import { Color } from "molstar/lib/mol-util/color";
 import { StructureSelectionQuery } from "molstar/lib/mol-plugin-state/helpers/structure-selection-query";
 import { MolScriptBuilder as B } from "molstar/lib/mol-script/language/builder";
-import type { Structure } from "molstar/lib/mol-model/structure";
+import { StructureElement, StructureProperties, type Structure } from "molstar/lib/mol-model/structure";
 import { createRoot, type Root } from "react-dom/client";
 import type { StructureReference } from "@/domain/atlas-data";
 
-export type StructureRepresentation = "cartoon" | "surface" | "ball-and-stick";
+export type StructureRepresentation = "cartoon" | "surface" | "ball-and-stick" | "spacefill";
+export type StructureColorMode = "chain" | "domain";
 export type ResidueFocus = { start: number; end: number; chain?: string; requestId: number };
+export type StructureDomain = { label: string; start: number; end: number; color: string };
 type StructureStatus = "loading" | "ready" | "unavailable";
-type StructureViewProps = { active: boolean; structure: StructureReference | null; confidenceActive?: boolean; representation?: StructureRepresentation; showLigands?: boolean; focusRange?: ResidueFocus | null; retryKey?: number; onStatusChange?: (status: StructureStatus) => void };
+type StructureViewProps = {
+  active: boolean; structure: StructureReference | null; confidenceActive?: boolean;
+  representation?: StructureRepresentation; colorMode?: StructureColorMode; domains?: StructureDomain[];
+  showLigands?: boolean; focusRange?: ResidueFocus | null; retryKey?: number; onStatusChange?: (status: StructureStatus) => void;
+  onResiduePick?: (residueNumber: number, chain: string) => void;
+  theme?: "light" | "dark";
+  autoRotate?: boolean;
+};
 
 const AtlasViewportControls = () => null;
+const TEAL = 0x0c8c78;
 
-export function StructureView({ active, structure: structureReference, confidenceActive = false, representation = "cartoon", showLigands = true, focusRange = null, retryKey = 0, onStatusChange }: StructureViewProps) {
+const REPRESENTATION_PARAMS: Record<Exclude<StructureRepresentation, "cartoon">, { type: "molecular-surface" | "ball-and-stick" | "spacefill"; typeParams: Record<string, unknown> }> = {
+  surface: { type: "molecular-surface", typeParams: { alpha: 0.72, quality: "high" } },
+  "ball-and-stick": { type: "ball-and-stick", typeParams: { alpha: 1, quality: "high" } },
+  spacefill: { type: "spacefill", typeParams: { alpha: 1, quality: "high" } },
+};
+
+export function StructureView({ active, structure: structureReference, confidenceActive = false, representation = "cartoon", colorMode = "chain", domains = [], showLigands = true, focusRange = null, retryKey = 0, onStatusChange, onResiduePick, theme = "light", autoRotate = false }: StructureViewProps) {
   const host = useRef<HTMLDivElement>(null);
   const pluginRef = useRef<Awaited<ReturnType<typeof createPluginUI>> | null>(null);
   const structureDataRef = useRef<Structure | null>(null);
+  const onResiduePickRef = useRef(onResiduePick);
   const [status, setStatus] = useState<StructureStatus>("loading");
+
+  useEffect(() => { onResiduePickRef.current = onResiduePick; }, [onResiduePick]);
 
   useEffect(() => {
     if (!active || !host.current || !structureReference) return;
     let disposed = false;
     let plugin: Awaited<ReturnType<typeof createPluginUI>> | undefined;
     let reactRoot: Root | undefined;
+    let clickSubscription: { unsubscribe: () => void } | undefined;
     const target = document.createElement("div");
     target.className = "structure-molstar-root";
     host.current.appendChild(target);
@@ -42,6 +62,7 @@ export function StructureView({ active, structure: structureReference, confidenc
       const rootToUnmount = reactRoot;
       // Remove Mol*'s global custom-property registrations before a replacement
       // instance starts; defer only the nested React-root teardown.
+      clickSubscription?.unsubscribe();
       pluginToDispose?.dispose();
       window.setTimeout(() => {
         rootToUnmount?.unmount();
@@ -116,15 +137,36 @@ export function StructureView({ active, structure: structureReference, confidenc
         const structure = await plugin.builders.structure.createStructure(model);
         structureDataRef.current = structure.obj?.data ?? null;
         if (disposed) return;
+        clickSubscription = plugin.behaviors.interaction.click.subscribe((event) => {
+          const loci = event.current.loci;
+          if (!StructureElement.Loci.is(loci)) return;
+          const location = StructureElement.Loci.getFirstLocation(loci);
+          if (!location) return;
+          const residueNumber = StructureProperties.residue.auth_seq_id(location);
+          const chain = StructureProperties.chain.auth_asym_id(location);
+          onResiduePickRef.current?.(residueNumber, chain);
+        });
         if (!experimental && confidenceActive) {
           await plugin.builders.structure.representation.applyPreset(structure, QualityAssessmentPLDDTPreset);
+        } else if (colorMode === "domain" && domains.length > 0) {
+          // Real UniProt-sourced domain ranges: one representation per range, uniformly colored.
+          for (const domain of domains) {
+            const expression = B.struct.generator.atomGroups({
+              "residue-test": B.core.logic.and([B.core.rel.gre([B.ammp("auth_seq_id"), domain.start]), B.core.rel.lte([B.ammp("auth_seq_id"), domain.end])]),
+            });
+            const component = await plugin.builders.structure.tryCreateComponentFromExpression(structure, expression, `domain-${domain.start}-${domain.end}`, { tags: [`domain-${domain.start}-${domain.end}`] });
+            if (component) {
+              await plugin.builders.structure.representation.addRepresentation(component, representation === "cartoon"
+                ? { type: "cartoon", color: "uniform", colorParams: { value: Color(parseInt(domain.color.replace("#", ""), 16)) }, typeParams: { alpha: 1, quality: "high" } }
+                : { ...REPRESENTATION_PARAMS[representation], color: "uniform", colorParams: { value: Color(parseInt(domain.color.replace("#", ""), 16)) } });
+            }
+          }
         } else {
           const polymer = await plugin.builders.structure.tryCreateComponentStatic(structure, "polymer");
-          if (polymer) await plugin.builders.structure.representation.addRepresentation(polymer, representation === "surface"
-            ? { type: "molecular-surface", color: "uniform", colorParams: { value: Color(0x3a8fb8) }, typeParams: { alpha: 0.72, quality: "high" } }
-            : representation === "ball-and-stick"
-              ? { type: "ball-and-stick", color: "element-symbol", typeParams: { alpha: 1, quality: "high" } }
-              : { type: "cartoon", color: "uniform", colorParams: { value: Color(0x78d8ff) }, typeParams: { alpha: 1, quality: "high" } });
+          const colorTheme = colorMode === "chain" ? "chain-id" : "uniform";
+          if (polymer) await plugin.builders.structure.representation.addRepresentation(polymer, representation === "cartoon"
+            ? { type: "cartoon", color: colorTheme, colorParams: colorTheme === "uniform" ? { value: Color(TEAL) } : undefined, typeParams: { alpha: 1, quality: "high" } }
+            : { ...REPRESENTATION_PARAMS[representation], color: colorTheme, colorParams: colorTheme === "uniform" ? { value: Color(TEAL) } : undefined });
         }
         const ligand = showLigands ? await plugin.builders.structure.tryCreateComponentStatic(structure, "ligand") : null;
         if (ligand) {
@@ -149,7 +191,22 @@ export function StructureView({ active, structure: structureReference, confidenc
 
     void initialize();
     return () => { disposed = true; pluginRef.current = null; structureDataRef.current = null; disposeInstance(); };
-  }, [active, confidenceActive, onStatusChange, representation, retryKey, showLigands, structureReference]);
+  }, [active, confidenceActive, onStatusChange, representation, colorMode, domains, retryKey, showLigands, structureReference]);
+
+  // Lighting/rotation are visual-only and cheap to re-apply, so they live in their
+  // own effect instead of the init effect above — toggling either must never trigger
+  // a full Mol* plugin remount (redownloading and reparsing the structure).
+  useEffect(() => {
+    const plugin = pluginRef.current;
+    if (!active || !plugin) return;
+    const dark = theme === "dark";
+    plugin.canvas3d?.setProps({
+      renderer: { exposure: dark ? 1.08 : 0.72, ambientIntensity: dark ? 0.7 : 0.46, interiorDarkening: dark ? 0.2 : 0.42 },
+      // A slow, honest camera-orbit spin — not a molecular-dynamics simulation. Atlas does not
+      // fabricate conformational motion; see docs/SCIENTIFIC_DATA_BOUNDARIES.md.
+      trackball: { animate: autoRotate ? { name: "spin", params: { speed: 0.35 } } : { name: "off", params: {} } },
+    });
+  }, [active, theme, autoRotate, status]);
 
   useEffect(() => {
     const plugin = pluginRef.current; const structure = structureDataRef.current;

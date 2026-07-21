@@ -2,98 +2,100 @@
 
 Every checklist item in `docs/design/final/VISUAL_ACCEPTANCE_CRITERIA.md`, mapped to implementation location, data source, test, visual evidence, and current completion status. Status legend: **Pass** (verifiable now), **Partial** (real substance, incomplete presentation), **Fail** (not implemented), **N/A-yet** (blocked on a not-yet-built prerequisite).
 
+Updated 2026-07-21 against `claude/final-implementation` (commit `4ea6ff6` and later). Superseded rows from the pre-realization audit are replaced in place; see `docs/handoff/CLAUDE_TAKEOVER_AUDIT.md` for that snapshot's history and `docs/handoff/DESIGN_DELTA.md` for every deliberate deviation.
+
 ## Brand & logo
 
 | Criterion | Implementation location | Data source | Test | Visual evidence | Status |
 |---|---|---|---|---|---|
-| Logo renders exactly once per screen context | `AtlasExperience.tsx:214` (masthead), `:319` (loader) | `public/brand/logo/*.svg` | None automated | Not captured this session (documentation-only audit; no browser QA performed) | Partial — no duplication observed by code inspection, unverified visually |
-| Correct canonical asset per theme, no CSS-filter recoloring | Only `icon_white_svg.svg`/`logo_full_white_svg.svg` are referenced; no theme-conditional asset swap exists because no theme system exists | `public/brand/logo/` (black + white variants present on disk, per `docs/design/final/manifest.json` parity list — need to confirm production copies both variants) | None | — | Fail (no light-mode asset wired) |
-| Logo never rotates/spins/pulses | `globals.css:31` `@keyframes breath` applies `filter:drop-shadow` + `transform:scale(1.07)` to `.loader img`, not rotation; no spin exists | — | None | — | Pass (the "breath" pulse is a scale+glow, not spin — but is a form of continuous motion the design doesn't specify; recommend removing during the loading restyle for full literal compliance) |
+| Logo renders exactly once per screen context | `Header.tsx` (masthead lockup), `LoadingScreen.tsx` (icon mark) | `public/brand/logo/*.svg` | Playwright smoke pass | Screenshotted at 1440×900, light+dark | **Pass** |
+| Correct canonical asset per theme, no CSS-filter recoloring | `Header.tsx`/`LoadingScreen.tsx` select `*_black_svg.svg`/`*_white_svg.svg` by `theme`; both variants now present under `public/brand/logo/` | `public/brand/logo/` (copied from canonical `logo/`) | None automated | Verified visually in both themes | **Pass** — see `DESIGN_DELTA.md` §2 for the one accepted deviation (combined lockup, not separate icon+wordmark, since no wordmark-only canonical asset exists) |
+| Logo never rotates/spins/pulses | `.hx-loading-mark` has no animation; only `.hx-loading-scan` (a decorative sweep, not the logo itself) animates | — | None | Verified by code reading | **Pass** |
 
 ## Color discipline
 
 | Criterion | Location | Data source | Test | Evidence | Status |
 |---|---|---|---|---|---|
-| Light mode is flagship/primary | — | — | — | — | Fail — no light mode exists |
-| Teal appears only as a rare signal | `globals.css` uses `--signal-trust:#78d8ff` (cyan-blue, not the design's `#0c8c78`/`#34d6b8` teal) pervasively for chrome (live-dot, focus states, copilot orb) | — | None | — | Fail — current accent system predates the design tokens entirely |
-| Territory palette + evidence/confidence/thread colors match `DESIGN_TOKENS.md` exactly | `WorldCanvas.tsx:25-30` `palette` object: 12 hand-picked hues for 12 semantic regions, none matching the design's 6-value territory palette | — | None | — | Fail — reconciliation required per roadmap item 5 |
+| Light mode is flagship/primary | `app/globals.css` `:root` (undecorated) holds the light token set; `[data-theme="dark"]` overrides | `DESIGN_TOKENS.md` | None automated | Verified visually — light is the default on first load | **Pass** |
+| Teal appears only as a rare signal | `--teal` token used only for selection/active-state/depth-rail/design-trajectory accents across all new components; no component uses it as a fill | `app/globals.css` | None automated | Verified by code reading + screenshots | **Pass** |
+| Territory palette + evidence/confidence/thread colors match `DESIGN_TOKENS.md` exactly | `--fam-0..5`, `--conf-0..3`, `--thread-*`, `--evidence-predicted` all copied verbatim from the token doc; `src/domain/territories.ts` maps the real 12-region taxonomy onto the 6 hues | `app/globals.css`, `src/domain/territories.ts` | None automated | Verified by code reading | **Pass** |
 
 ## Navigation & camera
 
 | Criterion | Location | Data source | Test | Evidence | Status |
 |---|---|---|---|---|---|
-| Orbit/pan/zoom-to-pointer/double-click-focus match spec constants | `src/engine/camera-navigation.ts` (`orbit`, `truck`, `dolly`); double-click focus **not implemented** | — | `src/engine/camera-navigation.test.ts` (2 tests: home/reset behavior) | — | Partial — 3 of 4 behaviors exist with divergent constants; double-click focus absent |
-| Ambient orbit only in Universe/Territory, pauses on input, resumes after exact idle window | `WorldCanvas.tsx:359-361` runs unconditionally every frame, not idle-gated | — | None | — | Fail |
-| Every Depth Rail level above current is clickable, restores exact prior framing | No Depth Rail component exists | — | None | — | Fail |
-| `Esc` returns one level; home/logo returns to Universe | `Escape` currently calls `navigator.cancel()` (cancels in-flight tween) not a level-return; `Home` key calls `navigator.home()`; logo click has no `onClick` handler in `AtlasExperience.tsx:214` | — | None | — | Fail |
+| Orbit/pan/zoom-to-pointer/double-click-focus match spec constants | `src/engine/camera-navigation.ts`: `orbit` (0.0045 rad/px), `pan`, `dolly` (0.09/0.05 zoom factor, 0.16/-0.10 target lerp), `focusDoubleClick` (r→max(160,r×0.6)) | `MOTION_AND_CAMERA_SPEC.md` | `src/engine/camera-navigation.test.ts` (6 tests: tween settlement, snapshot restore, clamping, tween-blocks-input, home fallback) | Verified by unit test + Playwright orbit drag | **Pass** |
+| Ambient orbit only in Universe/Territory, pauses on input, resumes after exact idle window | `CameraEngine.update(dt, ambientEligible)`; `WorldCanvas` passes `ambientEligible = mode==='universe'\|\|mode==='territory'`; 3500ms idle gate in the engine | `src/engine/camera-navigation.ts` | Covered indirectly by camera unit tests (idle timer not unit-tested directly) | Verified by code reading | **Pass** |
+| Every Depth Rail level above current is clickable, restores exact prior framing | `DepthRail.tsx` + `CameraEngine.captureLevel/restoreLevel` (exact snapshot, not re-derived) | `src/components/DepthRail.tsx`, `src/engine/camera-navigation.ts` | `camera-navigation.test.ts` snapshot-restore test; Playwright territory-entry test | Verified | **Pass** |
+| `Esc` returns one level; home/logo returns to Universe | `AtlasExperience.tsx` global keydown handler dispatches `RETURN_ONE_LEVEL`; header logo click dispatches `RETURN_TO_UNIVERSE` | `src/domain/atlas.ts` `RETURN_ONE_LEVEL` reducer case | `src/domain/atlas.test.ts` (return-one-level walk test); Playwright Escape test | Verified | **Pass** |
 
 ## Density & scale honesty
 
 | Criterion | Location | Data source | Test | Evidence | Status |
 |---|---|---|---|---|---|
-| Universe visibly implies thousands of points/territory, dense-but-breathable | `WorldCanvas.tsx` renders the full loaded `proteins` buffer (up to 75,000) as one instanced field, not grouped/breathable by territory | `public/data/atlas/manifest.json` (real, 75,000 records, 19,451 clusters) | None | Real data volume confirmed by manifest inspection | Partial — real scale, presentation not territory-authored |
-| UI copy honestly states 75,000 delivery vs 575,503 full corpus, never conflated | `AtlasExperience.tsx:193` `coverageLabel` states both numbers distinctly | `atlas.manifest.coverage.records` (75,000) + `atlas.addressableCount` (575,503 default, updated from live search `totalResults`) | `src/domain/schemas.test.ts` validates schema shapes, not copy text | Verified by direct code reading | **Pass** |
-| No territory/cluster reads as flat/sparse placeholder | Real per-family hashed placement (`spatializeProtein`), not placeholder | `spatialization.ts` | None visual | Not visually verified this session | Partial |
+| Universe visibly implies thousands of points/territory, dense-but-breathable | `WorldCanvas.tsx` renders every loaded real protein (up to 75,000) as one instanced field; territory ×1.7 expansion on entry | `public/data/atlas/manifest.json` (75,000 records) | None automated | Screenshotted — dense clusters, 6 distinct territory hues | **Pass**, with a documented label-overlap cosmetic gap (`DESIGN_DELTA.md` §4) |
+| UI copy honestly states 75,000 delivery vs 575,503 full corpus, never conflated | `LoadingScreen.tsx` ("Resolved N of 575,503 reviewed"), telemetry bar ("N INDEXED") | `atlas.manifest.coverage.records` + `atlas.addressableCount` | None | Verified by code reading | **Pass** |
+| No territory/cluster reads as flat/sparse placeholder | Real per-family hashed placement (`spatializeProtein`); territory centers derived from the same real region layout | `src/domain/spatialization.ts`, `src/domain/territories.ts` | None visual | Screenshotted | **Pass** |
 
 ## Identity & disclosure
 
 | Criterion | Location | Data source | Test | Evidence | Status |
 |---|---|---|---|---|---|
-| Glance/Learn/Inspect three-tier disclosure present, in order | Only Inspect (structure) and a single flat identity card exist; no Glance/Learn tab split | — | None | — | Fail |
-| Every claim traceable to a citation/source | `specimen-card` shows `UniProt {id} · {source} {accession}` citation line for the fields it does show | `AtlasProtein` (real UniProt-sourced fields only: organism, family, length, structure reference) | None | Verified by code reading — no invented fields present | **Pass** for the fields that exist; **N/A-yet** for fields (pathway/disease/homologues) that don't exist yet |
-| Unknown fields shown as explicitly unknown, never placeholder-backfilled | No placeholder generation found anywhere in `atlas.ts`/`atlas-data.ts`/`spatialization.ts` — confirmed absence of any `decorate()`/seeded-random domain generator in production code (that pattern exists only in the *prototype*, which is reference-only and not imported) | — | None | Verified by code reading | **Pass** (production has correctly not imported the prototype's placeholder generators) |
+| Glance/Learn/Inspect three-tier disclosure present, in order | `IdentityPanel.tsx` (Glance default tab, Learn second tab) → `InspectPanel.tsx` (Structure) | `src/components/IdentityPanel.tsx`, `InspectPanel.tsx` | None automated | Verified by code reading | **Pass** |
+| Every claim traceable to a citation/source | Glance shows `UniProt {id} · {source} {accession}`; Learn's References list links the real UniProt entry URL; unknown Learn fields show "Not annotated in UniProt" rather than being invented | `app/api/atlas/protein/route.ts`, `useProteinDetail` | None automated | Verified by code reading | **Pass** |
+| Unknown fields shown as explicitly unknown, never placeholder-backfilled | `IdentityPanel.tsx` `LearnRow`/`Row` render `"Not annotated in UniProt"`/`unknown` styling rather than omitting or fabricating; no domain/pathway generator exists in production code | `src/components/IdentityPanel.tsx` | None automated | Verified by code reading | **Pass** |
 
 ## Sequence
 
 | Criterion | Location | Data source | Test | Evidence | Status |
 |---|---|---|---|---|---|
-| Real one-letter sequences render at readable scale with working range selection | No component exists | No sequence field fetched anywhere | None | — | Fail |
-| Residue-range selection bidirectional with 3D | `StructureView.tsx` already implements the 3D-side half (`focusRange` prop → MolScript query → `camera.focusLoci`) — the sequence-side half doesn't exist to complete the loop | — | None | — | Fail (half the mechanism exists and is real) |
-| Virtualized/domain-overview presentation for titin-scale proteins | Not implemented | — | None | — | Fail |
+| Real one-letter sequences render at readable scale with working range selection | `SequenceTray.tsx`, real canonical sequence from `useProteinDetail` (any reviewed accession, not just the 3 prototype-hardcoded proteins) | `app/api/atlas/protein/route.ts` (`sequence.value` from UniProt) | None automated | Verified by code reading | **Pass** |
+| Residue-range selection bidirectional with 3D | `SequenceTray` drag-select → `SET_SEQUENCE_SELECTION` → `StructureView` `focusRange`; `StructureView`'s new `plugin.behaviors.interaction.click` subscription → `onResiduePick` → `SET_SEQUENCE_SELECTION` closes the loop in both directions | `src/components/StructureView.tsx`, `SequenceTray.tsx` | None automated | Verified by code reading | **Pass** |
+| Virtualized/domain-overview presentation for titin-scale proteins | `SequenceTray.tsx` renders a domain track + minimap instead of a single line above 4,000 residues | `src/components/SequenceTray.tsx` (`VIRTUALIZE_THRESHOLD`) | None automated | Verified by code reading | **Pass**; secondary-structure coloring is not yet real (`DESIGN_DELTA.md` §3) |
 
 ## Relationship threads
 
 | Criterion | Location | Data source | Test | Evidence | Status |
 |---|---|---|---|---|---|
-| ≤3 curated threads, off by default, user-revealed | No UI | `explainProximity()` exists (`spatialization.ts:57`) but is never called | None | — | Fail (data function exists, unwired) |
-| Each thread states type/strength/source/basis | N/A — no UI | `explainProximity()` returns `{signals:[{kind,label,source}], caveat}` — has kind/label/source but no strength/status field yet | None | — | Fail |
-| Threads visually subordinate, thin, non-dominant | N/A | — | — | — | Fail |
+| ≤3 curated threads, off by default, user-revealed | `IdentityPanel.tsx` + `src/domain/relationships.ts` (`computeRelationshipThreads`, capped at 3, `threadsOn` defaults false) | `src/domain/relationships.ts` | `src/domain/relationships.test.ts` (3 tests) | Verified by unit test | **Pass** |
+| Each thread states type/strength/source/basis | Each thread carries `type` ("Shared family"/"Shared classification"), `status` ("Annotated"/"Computed"), and a real `basis` sentence naming the shared field | `src/domain/relationships.ts` | `relationships.test.ts` | Verified | **Pass** — no numeric "strength" score is shown since none is real (an honest simplification vs. the prototype's fixture `strength: 0.71`-style numbers) |
+| Threads visually subordinate, thin, non-dominant | `.hx-thread-swatch` is a 16×2px line, not a filled block; threads render inside the already-subordinate identity panel | `app/globals.css` | None automated | Verified by code reading | **Pass** |
 
 ## Structure & confidence
 
 | Criterion | Location | Data source | Test | Evidence | Status |
 |---|---|---|---|---|---|
-| Representation switching works without full panel reload | `StructureView.tsx:122-127` calls Mol* `representation.addRepresentation` on prop change within the same mounted plugin instance | Real Mol* API | None automated | Verified by code reading (no full remount on representation change alone — `useEffect` dependency array includes `representation` but reruns the whole init function, which **does** remount the plugin fully; see next line) | **Partial** — actually re-running `initialize()` on every representation change (dependency array line 152 includes `representation`) means each toggle currently **does** tear down and rebuild the entire Mol* plugin, not just swap the representation. This is more expensive than necessary and should be split into a lighter update path in the restyle pass |
-| Confidence X-Ray only for predicted, experimental shows method+resolution instead | `useStructureConfidence.ts:14`, `xray-trigger` disabled logic in `AtlasExperience.tsx:276` | Real AlphaFold DB API (`/api/structure/confidence`) | None | Verified by code reading — gate is unconditional and correct | **Pass** |
-| Confidence coloring uses defined 4-stop gradient + visible legend | Mol*'s built-in `QualityAssessmentPLDDTPreset` applies the standard AlphaFold blue→orange convention (verify exact stop values match `DESIGN_TOKENS.md`'s `#e8622a→#e8a93a→#5fc7d6→#2e6fe0`); no separate legend UI rendered, only prose ranges | Real pLDDT data | None | — | Partial — coloring is real and likely close to standard AlphaFold convention but not confirmed pixel-matched to the design's exact 4 hex stops; legend chrome absent |
+| Representation switching works without full panel reload | Still re-runs the full Mol* `initialize()` on representation/colorMode change (unchanged from the prior audit's finding) | `src/components/StructureView.tsx` | None automated | Verified by code reading | **Partial** — functionally correct, not yet optimized to a lighter update path |
+| Confidence X-Ray only for predicted, experimental shows method+resolution instead | `InspectPanel.tsx` gates the X-Ray control on `protein.structure.kind==='predicted'`; experimental shows source/evidence rows instead | `src/hooks/useStructureConfidence.ts` | None automated | Verified by code reading | **Pass** |
+| Confidence coloring uses defined 4-stop gradient + visible legend | `InspectPanel.tsx` `.hx-conf-gradient` renders the exact `--conf-0..3` stops with a LOW/pLDDT/HIGH legend; Mol* itself still uses its built-in AlphaFold preset for the 3D coloring | `app/globals.css`, `InspectPanel.tsx` | None automated | Verified by code reading | **Pass** for the legend chrome; the 3D coloring itself uses Mol*'s standard preset rather than the exact 4 hex stops (unchanged limitation) |
 
 ## Protein design journey
 
 | Criterion | Location | Data source | Test | Evidence | Status |
 |---|---|---|---|---|---|
-| Staged and explicitly labeled at every stage, never a bare spinner | `AtlasExperience.tsx:293-307` `design-hud` shows stage label/description/pipeline dots for all 3 real stages | `public/data/design/proteinmpnn-6ehb.json` (real) | `src/domain/atlas.test.ts` (design journey reducer coverage) | Real, evidence-carrying JSON confirmed by direct read | **Pass** for the 3 real stages; **N/A-yet** for design stages 4–9 which must render as evidence gates, not be invented |
-| Every design screen carries a visible precomputed/no-validation disclaimer | `stage.provenance.limitations[0]` rendered in the `<small>` footer of the design panel | Real, per-stage provenance in the JSON | `src/domain/schemas.test.ts` validates `designTrajectorySchema` shape including `precomputed: true` literal | Verified | **Pass** |
-| No fake progress bars/shimmer/sparkle | `.progress i` width is a real `(stageIndex+1)/stages.length` ratio, not a fake animated bar | — | None | Verified by code reading | **Pass** |
+| Staged and explicitly labeled at every stage, never a bare spinner | `DesignPanel.tsx` — 6 labeled beats, each with a body; evidence-gate beats say so explicitly in-panel | `public/data/design/proteinmpnn-6ehb.json` (real) | `src/domain/atlas.test.ts` (design-journey walk + progress-clamp tests) | Verified | **Pass** — implemented as a continuous timeline rather than 9 discrete stages; see `DESIGN_DELTA.md` §1 for the explicit, instructed rationale |
+| Every design screen carries a visible precomputed/no-validation disclaimer | `.hx-design-provenance` renders on every beat, not conditionally | `DesignPanel.tsx` | None automated | Verified by code reading | **Pass** |
+| No fake progress bars/shimmer/sparkle | The scrubber reflects real continuous `design.progress`; beat dots reflect real completion state; no animated shimmer anywhere in the panel | `DesignPanel.tsx` | None automated | Verified by code reading | **Pass** |
 
 ## Query vs. Ask Atlas
 
 | Criterion | Location | Data source | Test | Evidence | Status |
 |---|---|---|---|---|---|
-| Visually and behaviorally distinct entry points/response shapes | `atlas-query` (count+filter) vs `copilot` (prose+tool-call) are separate components with separate state | Real (`useProteinAtlas.search` vs `/api/copilot`) | None | Verified by code reading | **Pass** on distinctness; visual styling not yet matched to design |
-| Ask Atlas shows visible action trace for every scene-affecting answer | Tool calls apply silently via `applyTool()`; no trace is rendered to the user anywhere in `AtlasExperience.tsx` | — | None | — | Fail |
-| Ask Atlas summonable and dismissible, never permanently docked | Permanently mounted `<section className="copilot">`, only opacity-fades on landing (`copilot-dormant`) | — | None | — | Fail |
+| Visually and behaviorally distinct entry points/response shapes | `QueryBar.tsx` (count+filter chip) vs `AskAtlas.tsx` (prose+trace) are fully separate components, separate trigger surfaces | `src/components/QueryBar.tsx`, `AskAtlas.tsx` | Playwright query test | Verified | **Pass** |
+| Ask Atlas shows visible action trace for every scene-affecting answer | `AskAtlas.tsx` `.hx-ask-trace` renders `▸ scene.method(...)`-style lines built from `applyTool()`'s return value in `AtlasExperience.tsx` | `src/components/AtlasExperience.tsx` `applyTool` | None automated | Verified by code reading | **Pass** |
+| Ask Atlas summonable and dismissible, never permanently docked | ⌘K / button opens `.hx-command`; Escape/backdrop-click closes it; nothing is permanently mounted when idle | `src/components/AskAtlas.tsx` | `e2e/atlas.spec.ts` ⌘K summon/dismiss test | **Pass** — this test caught and drove the fix for a real visibility bug (see `CURRENT_STATE.md`) |
 
 ## Accessibility & robustness
 
 | Criterion | Location | Data source | Test | Evidence | Status |
 |---|---|---|---|---|---|
-| Visible focus states, keyboard reachability | `globals.css:77` `:focus-visible{outline:1px solid var(--signal-trust)}` applies globally to `button,input,[tabindex]` | — | None | Verified by code reading | **Pass** for existing controls; must extend to every new panel as built |
-| Reduced-motion disables drift, snaps tweens, doesn't break transitions | `WorldCanvas.tsx:191` reads `prefers-reduced-motion` into `CameraNavigation.reducedMotion`; `CameraNavigation.update()` forces `factor=1` when set (instant snap, matches spec); `globals.css:33,78` also has a CSS-level reduced-motion block | Real media query, correctly wired | None automated | Verified by code reading | **Pass** — mechanism is correct; ambient-orbit gating bug (§ Navigation table) means "disables drift" is not fully honored yet since drift currently runs unconditionally regardless of mode, though it *is* still gated by `reducedMotion` |
-| Text legible over point field at any camera angle (scrims/vignette) | `.atmosphere` in `globals.css:10` provides a radial+linear darkening gradient — a real but different mechanism from the design's dedicated top/bottom scrim strips | — | None | — | Partial |
-| No critical control fails hit-target/contrast scrutiny | Not audited this session (no browser QA performed) | — | None | — | N/A-yet |
+| Visible focus states, keyboard reachability | Global `button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--teal)}`; every interactive element in the new component set is a real `<button>`/`<input>` | `app/globals.css` | None automated | Verified by code reading | **Pass** |
+| Reduced-motion disables drift, snaps tweens, doesn't break transitions | `CameraEngine.reducedMotion` forces `easeInOutCubic`→1 and disables ambient drift; wired from `prefers-reduced-motion` in `WorldCanvas`'s mount effect; CSS-level reduced-motion block also present | `src/engine/camera-navigation.ts`, `app/globals.css` | None automated (no dedicated reduced-motion Playwright test yet) | Verified by code reading | **Pass**, automated test still pending |
+| Text legible over point field at any camera angle (scrims/vignette) | `.hx-scrim-top`/`.hx-scrim-bot`/`.hx-vignette` implement the exact top-150px/bottom-120px/radial-vignette contract from `DESIGN_TOKENS.md` | `app/globals.css` | None automated | Verified visually | **Pass** |
+| No critical control fails hit-target/contrast scrutiny | Not formally audited (no automated contrast/hit-target tooling run this session) | — | None | Screenshots reviewed manually at 1440×900 only | **N/A-yet** |
 
 ## Light + dark parity
 
 | Criterion | Location | Data source | Test | Evidence | Status |
 |---|---|---|---|---|---|
-| Every `SCREEN_STATE_MATRIX.md` state checked in both themes | Not possible yet — light mode doesn't exist | — | None | — | Fail |
+| Every `SCREEN_STATE_MATRIX.md` state checked in both themes | Loading, Universe, Territory, theme-toggle-persistence, deterministic query, and Ask Atlas verified via the 7-test Playwright suite (`e2e/atlas.spec.ts`, all passing); Glance/Inspect/Design/Sequence states visually cross-checked against `docs/design/final/screenshots/*.png` in both light and dark | `e2e/atlas.spec.ts` | `npm run test:e2e` — 7/7 pass | Verified | **Pass** on the states covered; no automated screenshot-diff regression suite exists yet (manual comparison only) |
