@@ -75,4 +75,59 @@ describe("SceneController reducer", () => {
     state = reduceScene(state, { type: "NAV_TO_LEVEL", level: "territory" });
     expect(state).toBe(before);
   });
+
+  describe("CLOSE_PROTEIN (identity panel close button)", () => {
+    it("fully clears the protein state in one step from Inspect, unlike RETURN_ONE_LEVEL", () => {
+      let state = reduceScene(initialSceneState, { type: "ENTER_TERRITORY", territoryId: "catalysis-metabolism" });
+      state = reduceScene(state, { type: "SELECT_PROTEIN", proteinId: "P69905" });
+      state = reduceScene(state, { type: "INSPECT_STRUCTURE" });
+      state = reduceScene(state, { type: "TOGGLE_THREADS" });
+      state = reduceScene(state, { type: "OPEN_SEQUENCE" });
+      expect(state.mode).toBe("inspect");
+      state = reduceScene(state, { type: "CLOSE_PROTEIN" });
+      // A single CLOSE_PROTEIN from Inspect returns straight to the cluster (Territory),
+      // not to Glance the way one RETURN_ONE_LEVEL step would.
+      expect(state.mode).toBe("territory");
+      expect(state.territoryId).toBe("catalysis-metabolism");
+      expect(state.selectedProteinId).toBeNull();
+      expect(state.threadsOn).toBe(false);
+      expect(state.seqOpen).toBe(false);
+      expect(state.design).toBeNull();
+    });
+
+    it("fully clears from Design in one step", () => {
+      let state = reduceScene(initialSceneState, { type: "SELECT_PROTEIN", proteinId: "A5F934" });
+      state = reduceScene(state, { type: "INSPECT_STRUCTURE" });
+      state = reduceScene(state, { type: "START_DESIGN", trajectoryId: "proteinmpnn-6ehb-example-6", specification: "test" });
+      state = reduceScene(state, { type: "CLOSE_PROTEIN" });
+      expect(state.mode).toBe("universe");
+      expect(state.selectedProteinId).toBeNull();
+      expect(state.design).toBeNull();
+    });
+
+    it("returns to Universe when the protein was not selected from a cluster, preserving the active query", () => {
+      let state = reduceScene(initialSceneState, { type: "QUERY_ATLAS", query: "kinase", resultIds: ["P1", "P2"] });
+      state = reduceScene(state, { type: "SELECT_PROTEIN", proteinId: "P1" });
+      state = reduceScene(state, { type: "CLOSE_PROTEIN" });
+      expect(state.mode).toBe("universe");
+      expect(state.territoryId).toBeNull();
+      expect(state.selectedProteinId).toBeNull();
+      // Unlike RETURN_TO_UNIVERSE (an explicit reset), closing the panel is not a reset —
+      // it should not silently discard a query the user is still in the middle of.
+      expect(state.query).toBe("kinase");
+      expect(state.queryResultIds).toEqual(["P1", "P2"]);
+    });
+
+    it("differs from a single RETURN_ONE_LEVEL step in Inspect (which only reaches Glance)", () => {
+      let closeState = reduceScene(initialSceneState, { type: "ENTER_TERRITORY", territoryId: "catalysis-metabolism" });
+      closeState = reduceScene(closeState, { type: "SELECT_PROTEIN", proteinId: "P69905" });
+      closeState = reduceScene(closeState, { type: "INSPECT_STRUCTURE" });
+      let backState = closeState;
+      closeState = reduceScene(closeState, { type: "CLOSE_PROTEIN" });
+      backState = reduceScene(backState, { type: "RETURN_ONE_LEVEL" });
+      expect(closeState.mode).toBe("territory");
+      expect(backState.mode).toBe("glance");
+      expect(backState.selectedProteinId).not.toBeNull();
+    });
+  });
 });

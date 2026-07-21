@@ -508,6 +508,36 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
 .fatal-recovery button { width: max-content; border: 1px solid var(--glass-brd); background: transparent; color: var(--ink); padding: 12px 16px; border-radius: 2px; }
 
 /* ---------------------------------------------------------
+   Onboarding — optional, contextual, never a blocking modal
+   --------------------------------------------------------- */
+.hx-guide-entry { letter-spacing: .16em; }
+.hx-invite {
+  position: absolute; left: 50%; bottom: 92px; transform: translateX(-50%);
+  z-index: 40; padding: 14px 16px; display: flex; align-items: center; gap: 16px;
+  pointer-events: auto; animation: hx-rise .4s ease both;
+}
+.hx-invite-title { font-size: 14px; white-space: nowrap; }
+.hx-invite-actions { display: flex; gap: 8px; }
+.hx-invite-actions button { white-space: nowrap; }
+
+.hx-coach-ring {
+  position: fixed; z-index: 41; border-radius: 6px; pointer-events: none;
+  border: 1.5px solid var(--teal); box-shadow: 0 0 0 4000px var(--scrim), 0 0 16px var(--teal);
+  transition: top .25s ease, left .25s ease, width .25s ease, height .25s ease;
+}
+.hx-coach {
+  position: fixed; z-index: 42; width: 300px; padding: 16px; pointer-events: auto;
+  animation: hx-fade .25s ease both;
+}
+.hx-coach-eyebrow { color: var(--ink-faint); letter-spacing: .16em; font-size: 9px; }
+.hx-coach-title { font-size: 16px; margin-top: 4px; }
+.hx-coach-body { font-size: 12px; color: var(--ink-soft); line-height: 1.5; margin: 8px 0 14px; }
+.hx-coach-controls { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.hx-coach-nav { display: flex; gap: 8px; }
+.hx-coach-skip { color: var(--ink-faint); letter-spacing: .12em; font-size: 9.5px; background: none; border: 0; }
+.hx-coach-skip:hover { color: var(--ink-soft); }
+
+/* ---------------------------------------------------------
    Responsive
    --------------------------------------------------------- */
 @media (max-width: 1050px) {

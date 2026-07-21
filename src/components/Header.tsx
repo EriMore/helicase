@@ -11,9 +11,10 @@ type HeaderProps = {
   onHome: () => void;
   showBack: boolean;
   onBack: () => void;
+  onOpenGuide: () => void;
 };
 
-export function Header({ theme, releaseLabel, soundOn, onToggleSound, ambientOn, onToggleAmbient, onToggleTheme, onHome, showBack, onBack }: HeaderProps) {
+export function Header({ theme, releaseLabel, soundOn, onToggleSound, ambientOn, onToggleAmbient, onToggleTheme, onHome, showBack, onBack, onOpenGuide }: HeaderProps) {
   const markSrc = theme === "light" ? "/brand/logo/icon_black_svg.svg" : "/brand/logo/icon_white_svg.svg";
   const wordSrc = theme === "light" ? "/brand/logo/word_black.png" : "/brand/logo/word_white.png";
   return (
@@ -34,6 +35,7 @@ export function Header({ theme, releaseLabel, soundOn, onToggleSound, ambientOn,
           <span className="hx-status-dot" />
           {releaseLabel}
         </span>
+        <button className="hx-toggle hx-guide-entry mono" onClick={onOpenGuide} aria-label="Replay the guided tour">GUIDE</button>
         <button className="hx-toggle mono" onClick={onToggleSound}>{soundOn ? "SOUND ●" : "SOUND ○"}</button>
         <button className="hx-toggle mono" onClick={onToggleAmbient} title="Ambient soundscape (off by default, independent of cue sounds)">{ambientOn ? "AMBIENT ●" : "AMBIENT ○"}</button>
         <button className="hx-toggle hx-toggle-theme mono" onClick={onToggleTheme}>{theme === "light" ? "DARK" : "LIGHT"}</button>

@@ -132,6 +132,16 @@ export class CameraEngine {
     this.startTween(durationMs);
   }
 
+  /**
+   * Reposition the desired target without starting a discrete tween — `now` continues to
+   * ease toward it via the normal per-frame follow. Used to keep a selected protein's
+   * framing correct across viewport resizes without a jarring re-tween.
+   */
+  retarget(target: THREE.Vector3) {
+    this.cam.target.copy(target);
+    this.clampTarget();
+  }
+
   /** Cancel an in-flight tween without moving the camera. Direct manipulation resumes from `now`. */
   cancel() {
     if (!this.tween) return;

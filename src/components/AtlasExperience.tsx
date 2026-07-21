@@ -15,6 +15,7 @@ import { useDesignTrajectory } from "@/hooks/useDesignTrajectory";
 import { useProteinDetail } from "@/hooks/useProteinDetail";
 import { useTheme } from "@/hooks/useTheme";
 import { useSound } from "@/hooks/useSound";
+import { useOnboarding } from "@/hooks/useOnboarding";
 import { WorldCanvas, type WorldMetrics } from "./WorldCanvas";
 import { Header } from "./Header";
 import { DepthRail } from "./DepthRail";
@@ -25,6 +26,7 @@ import { DesignPanel } from "./DesignPanel";
 import { SequenceTray } from "./SequenceTray";
 import { AskAtlas } from "./AskAtlas";
 import { LoadingScreen } from "./LoadingScreen";
+import { OnboardingInvitation, OnboardingGuide } from "./Onboarding";
 
 const StructureView = dynamic(() => import("./StructureView").then((module) => module.StructureView), { ssr: false });
 
@@ -70,6 +72,9 @@ export function AtlasExperience() {
   const loaderVisible = !atlas.manifest || atlas.progress < 1;
   const stageLabel = !atlas.manifest ? "OPENING THE BIOLOGICAL INDEX" : atlas.progress < 1 ? "SPATIALIZING PROTEIN FAMILIES" : "ATLAS READY";
 
+  // ---- onboarding: optional, contextual, never a blocking modal on arrival ----
+  const onboarding = useOnboarding(!loaderVisible);
+
   // ---- query ----
   const runQuery = useCallback(async (value: string) => {
     const nextQuery = value.trim();
@@ -80,7 +85,8 @@ export function AtlasExperience() {
     setQueryResults(results);
     issue({ type: "QUERY_ATLAS", query: nextQuery, resultIds: results.map((result) => result.protein.id) });
     sound.play(results.length ? "query" : "deny");
-  }, [atlas, issue, sound]);
+    onboarding.markInteracted();
+  }, [atlas, issue, sound, onboarding]);
 
   const clearQuery = useCallback(() => { setQuery(""); setQueryResults([]); issue({ type: "CLEAR_QUERY" }); }, [issue]);
 
@@ -94,13 +100,17 @@ export function AtlasExperience() {
   }, [queryResults]);
 
   // ---- selection / navigation ----
-  const selectProtein = useCallback((protein: AtlasProtein) => { issue({ type: "SELECT_PROTEIN", proteinId: protein.id }); sound.play("select"); }, [issue, sound]);
-  const enterTerritory = useCallback((territoryId: string) => { issue({ type: "ENTER_TERRITORY", territoryId }); sound.play("enter"); }, [issue, sound]);
+  const selectProtein = useCallback((protein: AtlasProtein) => { issue({ type: "SELECT_PROTEIN", proteinId: protein.id }); sound.play("select"); onboarding.markInteracted(); }, [issue, sound, onboarding]);
+  const enterTerritory = useCallback((territoryId: string) => { issue({ type: "ENTER_TERRITORY", territoryId }); sound.play("enter"); onboarding.markInteracted(); }, [issue, sound, onboarding]);
   const navigateLevel = useCallback((level: "universe" | "territory" | "protein" | "structure") => { issue({ type: "NAV_TO_LEVEL", level }); sound.play("back"); }, [issue, sound]);
   const returnHome = useCallback(() => { issue({ type: "RETURN_TO_UNIVERSE" }); clearQuery(); sound.play("back"); }, [issue, clearQuery, sound]);
   const inspectStructure = useCallback(() => { issue({ type: "INSPECT_STRUCTURE" }); sound.play("enter"); }, [issue, sound]);
   const startDesign = useCallback(() => { issue({ type: "START_DESIGN", trajectoryId: "proteinmpnn-6ehb-example-6", specification: "Redesign the sequence of the 6EHB outer-membrane-protein-U homotrimer with ProteinMPNN, tying equivalent positions across chains A, B, and C at sampling temperature 0.2." }); sound.play("enter"); }, [issue, sound]);
   const returnOneLevel = useCallback(() => { issue({ type: "RETURN_ONE_LEVEL" }); sound.play("back"); }, [issue, sound]);
+  // Only the identity panel's own close button fully clears the Protein state in one
+  // step (cluster/universe, whichever the selection came from) — Back/Escape/Depth-Rail
+  // all perform a one-level return instead. See docs/handoff/DESIGN_DELTA.md.
+  const closeProtein = useCallback(() => { issue({ type: "CLOSE_PROTEIN" }); sound.play("back"); }, [issue, sound]);
 
   // ---- global keyboard: Esc returns one level / closes overlays, Cmd+K summons Ask Atlas ----
   useEffect(() => {
@@ -153,7 +163,7 @@ export function AtlasExperience() {
   const applyTool = useCallback(async (tool: CopilotToolCall): Promise<string[]> => {
     switch (tool.name) {
       case "query_atlas": await runQuery(tool.arguments.query); return [`scene.filter("${tool.arguments.query}")`];
-      case "focus_territory": enterTerritory(tool.arguments.territory_id); return [`scene.focusTerritory(${tool.arguments.territory_id})`];
+      case "focus_territory": enterTerritory(tool.arguments.territory_id); return [`scene.focusCluster(${tool.arguments.territory_id})`];
       case "select_protein": {
         const protein = atlas.recordById.get(tool.arguments.protein_id);
         if (!protein) throw new Error(`${tool.arguments.protein_id} is not present in scene context.`);
@@ -309,7 +319,7 @@ export function AtlasExperience() {
       <div className="hx-scrim-bot" />
       <div className="hx-vignette" />
 
-      <Header theme={theme} releaseLabel={releaseLabel} soundOn={sound.enabled} onToggleSound={sound.toggle} ambientOn={sound.ambientOn} onToggleAmbient={sound.toggleAmbient} onToggleTheme={toggleTheme} onHome={returnHome} showBack={state.mode !== "universe"} onBack={returnOneLevel} />
+      <Header theme={theme} releaseLabel={releaseLabel} soundOn={sound.enabled} onToggleSound={sound.toggle} ambientOn={sound.ambientOn} onToggleAmbient={sound.toggleAmbient} onToggleTheme={toggleTheme} onHome={returnHome} showBack={state.mode !== "universe"} onBack={returnOneLevel} onOpenGuide={onboarding.openGuide} />
       <DepthRail
         mode={state.mode}
         visible={!loaderVisible}
@@ -345,7 +355,7 @@ export function AtlasExperience() {
           onOpenSequence={() => issue({ type: state.seqOpen ? "CLOSE_SEQUENCE" : "OPEN_SEQUENCE" })}
           canDesign={canDesign}
           onStartDesign={startDesign}
-          onClose={returnOneLevel}
+          onClose={closeProtein}
         />
       )}
 
@@ -427,6 +437,9 @@ export function AtlasExperience() {
       )}
 
       {commandError && <p className="hx-command-error" role="alert">{commandError}<button onClick={() => setCommandError(null)}>Dismiss</button></p>}
+
+      {!loaderVisible && <OnboardingInvitation visible={onboarding.invitationVisible} onAccept={onboarding.acceptInvitation} onDecline={onboarding.declineInvitation} />}
+      {!loaderVisible && onboarding.guideActive && <OnboardingGuide onFinish={onboarding.finishGuide} />}
 
       {loaderVisible && <LoadingScreen theme={theme} stageLabel={stageLabel} progress={atlas.progress} resolvedCount={atlas.records.length} />}
     </main>

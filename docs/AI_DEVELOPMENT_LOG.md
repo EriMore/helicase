@@ -1,5 +1,51 @@
 ---
 
+## 2026-07-21T17:15:00+00:00 — Final MVP stabilization pass on merged PR #11
+
+**Phase:** Bug Fix / Polish
+
+**Objective**
+Preserve PR #11's Claude-Design implementation as the authoritative baseline and land only the final, explicitly-scoped corrections requested for the Build Week MVP: cluster isolation, deterministic selection centring, petri-dish visibility, relationship-thread correctness (with an automated screen-projection test), query-match hit-reliability (with an automated test), light-mode vibrancy, structure-loading investigation, close-button semantics, optional/contextual onboarding, and GPT-5.6 credential handling. PR #12 (closed, unmerged) was inspected only as diagnostic evidence of what had regressed, never merged or transplanted.
+
+**Completed**
+- **Found and fixed a release-blocking bug before anything else was testable**: `atlasProteinSchema.name` (256-char cap) rejected every shard record after the corpus's own last commit started shipping untruncated names up to 320 chars — the Atlas silently never progressed past 0% loading. Raised the cap to 512. Diagnosed with temporary logging (removed after).
+- **Cluster isolation made binary**: fragment shader now hard-hides (alpha 0) any point outside the active cluster that isn't an explicitly revealed relationship target, instead of merely dimming it; `pickProtein()` now rejects hover/click hits outside the active cluster; cluster labels for other clusters no longer render at all while inside one. Also found and fixed an unrelated real bug in the same code path: a JS-side `uDimNon` calculation was dimming a cluster's *own* members merely for being inside a cluster (unrelated to any actual selection), directly undermining "cluster proteins must remain fully coloured, well lit."
+- **Territory → Cluster** in every user-visible string (Depth Rail, cluster label chips, hints, Ask Atlas trace, copilot system instruction); the dead, permanently-disabled "Neighbourhood" Depth Rail row removed. Internal identifiers intentionally left unrenamed — see `DESIGN_DELTA.md` §12 for why.
+- **Deterministic selection centring**: `computeFramingTarget()` measures the identity panel's and any right-side panel's real DOM bounds every time (not hardcoded constants) and offsets the camera's look-at target so the protein renders in the true usable gap; re-applied on select, inspect, thread reveal, and window resize.
+- **Petri-dish light-mode contrast fixed** (old tint was nearly identical to the light fog background); dish now fades to near-invisible in Structure/Design and restores fully in Protein.
+- **Relationship threads**: extracted `computeThreadEndpoints()` as the single, tested source of truth for both endpoints (used by both rendering and tests); camera now fits the selection + all thread targets on reveal; colour is theme-aware; added an e2e test that projects every visible endpoint through the actual render camera and asserts sub-pixel agreement with the corresponding protein's own on-screen position — a hard correctness gate a screenshot can't prove.
+- **Query-match hit-testing**: discovered `pickProtein()` had no query-awareness at all — any point was clickable regardless of match status during an active query. Fixed with a match-filtered raycast and a generous, distance-scaled hit radius independent of the rendered point size. Verified with a live 240-match query and a 42-point grid sweep across the viewport (found and fixed one test-script bug along the way: an early grid sample was landing on the header's Home button, not the canvas).
+- **Light-mode vibrancy restored**: re-saturated/darkened `THEME_TABLE.light`'s family hues and reduced the light-mode fog fade (previous palette read as near-monochrome at Universe scale).
+- **Structure loading**: split `StructureView.tsx` into a download/parse effect and a representation-application effect so switching representation/colour-mode/ligands never redownloads, reparses, or remounts the Mol* plugin — closing a gap the prior session's own acceptance matrix had already flagged as unoptimized. Measured (not assumed) that this sandbox's headless browser cannot reach `models.rcsb.org`/`alphafold.ebi.ac.uk` at all (confirmed via timing, even through the same egress proxy `curl` succeeds through) — a sandbox-only limitation, documented as such rather than papered over.
+- **`CLOSE_PROTEIN`**: new command wired only to the identity panel's × button — fully clears Protein/Structure/Design/Sequence state in one step and returns to the cluster or Universe, preserving an active query (unlike the header's explicit Home reset). Back/Escape/Depth-Rail remain one-level-only, unchanged and re-verified.
+- **Onboarding built from scratch** (none existed on the PR #11 baseline): a quiet, 7-second-delayed, non-blocking invitation; a 7-step anchored coach-mark tour with live-tracked target rings; persistent decline/completion via `localStorage`; a permanent header GUIDE entry to replay it anytime.
+- **GPT-5.6 credentialing** verified already correct (server-side-only key, explicit local-command fallback message only on missing/failed key, zero `NEXT_PUBLIC_` exposure) and documented more explicitly in `README.md`.
+- Added 4 new Playwright e2e tests and 6 new unit tests; recorded every deliberate deviation in `docs/handoff/DESIGN_DELTA.md` (§12–20).
+
+**Files**
+- Added: `src/hooks/useOnboarding.ts`, `src/components/Onboarding.tsx`.
+- Modified: `src/domain/schemas.ts`, `src/domain/atlas.ts`, `src/domain/relationships.ts`, `src/domain/territories.ts` (unchanged, verified only), `src/components/WorldCanvas.tsx`, `src/components/AtlasExperience.tsx`, `src/components/DepthRail.tsx`, `src/components/Header.tsx`, `src/components/StructureView.tsx`, `src/engine/camera-navigation.ts`, `app/api/copilot/route.ts`, `app/globals.css`, `README.md`, `e2e/atlas.spec.ts`, `src/domain/atlas.test.ts`, `src/domain/relationships.test.ts`, `docs/handoff/DESIGN_DELTA.md`, `docs/handoff/CURRENT_STATE.md`, `docs/handoff/FINAL_ACCEPTANCE_MATRIX.md`.
+- Removed: None.
+
+**Validation**
+- `npm run typecheck`, `npm run lint`, `npm test` (32/32), `npm run build` — all pass.
+- `npm run test:e2e` — 11/11 pass (verified twice: once after finding a real bug via the new query-selectability test, once after fixing it — see `DESIGN_DELTA.md` §14–19 for the paired root-causes).
+- Manual scripted Playwright screenshot verification at 1920×1080, both themes: Universe, Cluster (isolated), Protein (centred, dish visible), Structure, and the full onboarding flow.
+
+**Git**
+- Branch: `claude/final-mvp-stabilization`.
+- Commit(s): pending at time of writing.
+- PR: none created this session (not requested).
+- Status: Ready to commit and push.
+
+**Codex**
+- Session ID: Pending (/feedback)
+
+**Next**
+Run the structure-loading representation-switch fix's real-network timing verification in an environment with unrestricted browser egress (this sandbox cannot reach RCSB/AlphaFold from the browser at all); consider a follow-up pass fully renaming the internal "territory" identifiers to "cluster" if a maintainer wants code-level consistency beyond the user-visible surface.
+
+---
+
 ## 2026-07-21T09:50:00+00:00 - Live user-testing bugfix round 3: selection/query visual language, identity panel, navigation chrome, honest design-trajectory motion
 
 **Phase:** Bugfix / iteration on live user feedback

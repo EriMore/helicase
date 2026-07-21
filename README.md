@@ -20,11 +20,17 @@ Requirements: Node.js 20+ and npm.
 
 ```bash
 npm ci
-copy .env.example .env.local
+cp .env.example .env.local
 npm run dev
 ```
 
-Open `http://localhost:3000`. Add `OPENAI_API_KEY` to `.env.local` for the credentialed copilot. Without it, Atlas clearly identifies the local command fallback; search, structures, confidence, design evidence, and navigation remain functional.
+Open `http://localhost:3000`. For the credentialed Ask Atlas copilot, put a real key in `.env.local`:
+
+```text
+OPENAI_API_KEY=<your key>
+```
+
+`OPENAI_API_KEY` is read server-side only (`app/api/copilot/route.ts`) — it is never a `NEXT_PUBLIC_` variable and never reaches client-side code. Without it (or if the OpenAI request genuinely fails), Ask Atlas shows the explicit local-command-fallback message ("The credentialed reasoning service is unavailable…") rather than silently pretending to be GPT-5.6; search, structures, confidence, design evidence, and navigation all remain fully functional either way.
 
 ## Validate
 

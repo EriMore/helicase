@@ -22,6 +22,7 @@ export type SceneCommand =
   | { type: "NAV_TO_LEVEL"; level: "universe" | "territory" | "protein" | "structure" }
   | { type: "RETURN_ONE_LEVEL" }
   | { type: "RETURN_TO_UNIVERSE" }
+  | { type: "CLOSE_PROTEIN" }
   | { type: "QUERY_ATLAS"; query: string; resultIds: string[] }
   | { type: "CLEAR_QUERY" }
   | { type: "SET_TAB"; tab: IdentityTab }
@@ -136,6 +137,25 @@ export function reduceScene(state: SceneState, command: SceneCommand): SceneStat
         query: "", queryResultIds: [], threadsOn: false, seqOpen: false, design: null,
         lastCommand: command.type,
       };
+    // The identity panel's close button — and only the close button — fully clears the
+    // Protein state in one step, regardless of whether Glance, Inspect, or Design is
+    // currently showing, and returns to the cluster or Universe the selection came from.
+    // A query the user typed to reach that protein is preserved rather than discarded —
+    // unlike the header's explicit "return to Universe" action, this is not a reset.
+    // Back/Escape/Depth-Rail perform a one-level return instead; see
+    // docs/handoff/DESIGN_DELTA.md.
+    case "CLOSE_PROTEIN":
+      return state.territoryId != null
+        ? {
+            ...state, ...structureDefaults, mode: "territory", selectedProteinId: null,
+            threadsOn: false, seqOpen: false, seqSelection: null, design: null,
+            lastCommand: command.type,
+          }
+        : {
+            ...state, ...structureDefaults, mode: "universe", selectedProteinId: null,
+            threadsOn: false, seqOpen: false, seqSelection: null, design: null,
+            lastCommand: command.type,
+          };
     case "QUERY_ATLAS":
       return {
         ...state, mode: "universe", selectedProteinId: null, territoryId: null,

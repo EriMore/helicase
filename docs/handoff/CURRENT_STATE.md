@@ -1,10 +1,44 @@
 # Current State
 
-Last updated: 2026-07-21, by Claude (live user-testing bugfix round 3, following the round-2 bugfix session).
+Last updated: 2026-07-21 (later the same day), by Claude — final MVP stabilization pass.
 
-## Branch
+## Branch (this pass)
 
-`claude/final-implementation`, branched from `origin/integration/claude-handoff`. Draft PR #11 open against `integration/claude-handoff`.
+`claude/final-mvp-stabilization`, based on the merged PR #11 implementation (`claude/final-implementation`, commit `f229e90` merge + `080bb37`). PR #12 (`claude/helicase-implementation-continue-ymnwif`, closed/unmerged) was inspected only as diagnostic evidence for what had regressed — its broad implementation was not merged, transplanted, or copied.
+
+### Blocking bug found and fixed before anything else was testable
+
+The corpus's last commit on the PR #11 baseline (`080bb37`, "Fix silent 128-char truncation of protein full names") shipped real UniProt names up to 320 characters, but `atlasProteinSchema.name` in `src/domain/schemas.ts` still capped at 256 — every one of the 64 shards failed Zod validation on load, so `records` never populated and the Atlas sat at 0% loading forever with no visible error. Fixed by raising the cap to 512. Diagnosed by adding temporary `console.error` logging to `useProteinAtlas.ts`'s catch blocks (removed after diagnosis, per standard practice for this repo).
+
+### What this pass changed
+
+See `docs/handoff/DESIGN_DELTA.md` §12–20 for the full list with rationale. In short:
+
+- **Cluster isolation made binary** (was: dimmed, still hoverable/selectable) — both a shader-level hard-hide and a `pickProtein()` gating fix, plus a second real bug found in the same area (a JS-side `uDimNon` calculation was dimming a cluster's own members merely for being inside a cluster, unrelated to any selection).
+- **User-visible "Territory" → "Cluster"; Neighbourhood removed** from the Depth Rail (it was already a permanently-disabled row implying a level that doesn't exist).
+- **Deterministic protein-selection centring** — camera framing now accounts for the identity panel's and any right-side panel's real measured DOM bounds, not the raw canvas midpoint.
+- **Petri-dish light-mode contrast fixed** (previous tint was nearly identical to the light fog background) and now fades correctly in Structure/Design, restoring in Protein.
+- **Relationship threads**: camera now fits the selection + all thread targets on reveal; colour is theme-aware (white dark / near-black light); a shared, tested `computeThreadEndpoints()` is the single source of truth for both endpoints, with a new e2e test that projects every visible endpoint through the render camera and asserts sub-pixel agreement with the corresponding protein's own on-screen position.
+- **Query-match hit-testing**: an active query now actually filters hover/click to matches only (previously any point was clickable regardless of match status), with a generous, independently-scaled hit radius; verified with a 240-match live query and a 42-point grid sweep.
+- **Light-mode vibrancy restored**: `WorldCanvas.tsx`'s `THEME_TABLE.light` family hues re-saturated and the light-mode fog fade reduced — the previous palette read as near-monochrome/blackish at Universe scale.
+- **Structure loading**: `StructureView.tsx` split into a download/parse effect and a representation-application effect, so switching CARTOON/SURFACE/BALL-AND-STICK/SPACEFILL, COLOR, or LIGANDS no longer redownloads or reparses the structure. Full real-network timing verification was not possible in this sandbox — see the network caveat below.
+- **`CLOSE_PROTEIN`**: a new command, wired only to the identity panel's × button, that fully clears Protein/Structure/Design/Sequence state in one step (Back/Escape/Depth-Rail remain one-level-only, unchanged) and preserves an active query rather than discarding it.
+- **Onboarding built from scratch** — none existed on the PR #11 baseline. A quiet, delayed, non-blocking invitation; a 7-step anchored coach-mark tour; a permanent header GUIDE entry to replay it.
+- **GPT-5.6 credentialed-service messaging**: verified already correct (server-side-only key, explicit local fallback, no `NEXT_PUBLIC_` leak) and documented more explicitly in `README.md`.
+
+### Sandbox network caveat (read before assuming structure loading is broken)
+
+This sandbox's headless browser cannot reach `models.rcsb.org`/`alphafold.ebi.ac.uk` — confirmed via direct timing (`ERR_CONNECTION_RESET` after ~13s), even when Playwright's browser is explicitly pointed at the same egress proxy `curl` succeeds through in under a second from the same container. This is a sandbox-only browser-egress limitation, not application-level slowness or a real CORS problem — the same class of caveat as the SwiftShader/software-GPU note below. A real user's browser has no such restriction. Full first-meaningful-render timing under real network conditions is recommended as a follow-up smoke test outside this sandbox.
+
+### Validation (this pass)
+
+`npm run typecheck`, `npm run lint`, `npm test` (32/32), `npm run build` all pass. `npm run test:e2e` — 11/11 pass (4 new tests added: query-match reliability, relationship-thread endpoint projection, onboarding invitation/persistence, GUIDE replay).
+
+---
+
+## Prior branch (PR #11, preserved below for history)
+
+`claude/final-implementation`, branched from `origin/integration/claude-handoff`. Draft PR #11 open against `integration/claude-handoff`. **Now merged** — the section below is the historical record from that implementation pass; see the stabilization summary above for what changed since.
 
 ## Latest commits
 

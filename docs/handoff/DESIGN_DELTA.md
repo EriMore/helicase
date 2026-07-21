@@ -155,3 +155,131 @@ Deviations from `docs/design/final/` and the exported Claude Design prototype, d
 **Impact:** The Design panel now visibly changes across beats instead of showing a static structure throughout; the honest evidence gates are preserved and improved rather than removed.
 
 **Temporary:** Yes — sourcing a real RFdiffusion backbone trajectory and/or real AlphaFold2/ESMFold predictions for the two candidate sequences (with verified residue-numbering correspondence to 6EHB) is the correct follow-up to fully satisfy this request; explicitly deferred per the user's own "we'll build this out completely later."
+
+---
+
+## 12. Territory → Cluster rename scoped to user-visible strings, not every internal identifier
+
+**Target:** "Replace all user-visible 'Territory' terminology with 'Cluster'."
+
+**Implemented:** Every string a user actually sees or hears now says Cluster — the depth rail entry, the cluster label chips ("CLUSTER 01"), the "Click a cluster to enter" hint, the Ask Atlas trace line (`scene.focusCluster(...)`), the copilot's own system instruction, the onboarding coach marks, and this document. Internal identifiers (`SceneMode: "territory"`, `ENTER_TERRITORY`, `src/domain/territories.ts`, the `TerritoryId` type, CSS classes like `hx-label-territory`) were deliberately left as-is.
+
+**Reason:** The codebase already has an unrelated, pre-existing concept literally named "cluster" — the offline pipeline's fine-grained micro-clusters (`manifest.clusters`, `atlasClusterSchema`, `AtlasProtein.cluster`), used internally for shard-loading priority and never surfaced to users. Renaming the UI's 6-region concept to the same bare identifier at the code level would collide with that concept and materially raise the risk of a real bug (e.g. a future edit conflating "the cluster the user is in" with "the corpus micro-cluster this protein belongs to") for a change that has zero user-facing benefit — the internal names aren't visible to anyone outside the codebase. Renaming every occurrence project-wide was judged more risk than the "final corrections, not a redesign" mandate affords.
+
+**Impact:** No user, in any theme, at any screen, can see the word "Territory." The code's internal vocabulary is unchanged.
+
+**Temporary:** The internal rename (module/type/CSS names) is a reasonable follow-up for a future pass with room to re-verify the whole surface area; not required for product correctness today.
+
+---
+
+## 13. Removed Neighbourhood from the visible depth hierarchy; Depth Rail is now 4 levels
+
+**Target:** "Remove Neighborhood from the visible depth hierarchy."
+
+**Implemented:** `DepthRail.tsx`'s level list dropped the inert `neighbourhood` entry entirely (it was already non-clickable/non-navigable — a permanently disabled row) — the rail now shows Universe → Cluster → Protein → Structure, 4 levels, and `currentDepth()` was renumbered to match. The copilot's system instruction was updated to describe the real 4+1 hierarchy (Universe, Cluster, Protein, Structure, plus De novo/Design reachable from a real protein) instead of a fictitious 5-level Universe/Territory/Neighbourhood/Protein/Structure list.
+
+**Reason:** Per the design docs, Neighbourhood was never a distinct navigable `SceneMode` — it described a movement *regime* within Territory/Cluster (labels resolving into view as the camera moves closer), not a separate depth. A round-2 bugfix already tried filling that behavior with a pooled auto-label system and then explicitly removed it in round 3 because it conflicted with "no protein name unless hovering." What was left behind was a dead, disabled rail row implying a level that doesn't exist — confusing, not merely redundant.
+
+**Impact:** The Depth Rail is shorter and every row is real and reachable.
+
+**Temporary:** No.
+
+---
+
+## 14. Cluster isolation made binary; the JS-side per-cluster dim bug fixed alongside it
+
+**Target:** "When a user enters a cluster: every protein outside that cluster must be removed from rendering or fully hidden... cluster proteins must remain fully coloured, well lit, and clearly selectable. This requirement is binary."
+
+**Implemented:** The point fragment shader now hard-gates alpha to 0 for any point outside the active cluster that isn't an explicitly revealed relationship target (`uTerritoryFocus`/`uActiveTerritory`/`aExempt`), instead of the previous "dim to `dimNon`" treatment — verified visually (before/after screenshots) that other clusters fully disappear, not fade. Picking (hover + click) in `WorldCanvas.tsx`'s `pickProtein()` now rejects any raycast hit outside the active cluster (and not exempt) before it can become a hover label or a selection, closing a real gap: the pre-existing code only *dimmed* other clusters visually but never actually restricted hover/selection to the active one. Cluster labels other than the one being entered are no longer shown at all while inside a cluster (previously rendered at 12% opacity) — `showTerritories` is now `mode === "universe"` only.
+
+A second, independent bug was found and fixed in the same pass: `WorldCanvas.tsx`'s per-frame `uDimNon` target calculation included `material.uniforms.uTerritoryFocus.value > 0.5` in its trigger condition, meaning simply being inside a cluster (regardless of any selection) dimmed the cluster's *own* members by the same factor used to de-emphasize non-matches during a search/selection — directly undermining "cluster proteins must remain fully coloured, well lit." Removed; `uDimNon` now only engages when there is an actual selection or active query to be primary against.
+
+**Reason:** Both were genuine regressions/gaps against the explicit binary requirement, confirmed by screenshot comparison (`/tmp/.../round2/03-cluster-light.png` vs. the pre-fix baseline) before and after.
+
+**Impact:** Entering a cluster now shows only that cluster's proteins, fully lit, hoverable, and selectable; every other cluster is completely absent from the rendered scene until the user leaves.
+
+**Temporary:** No.
+
+---
+
+## 15. Deterministic protein-selection centring: measured DOM bounds, not canvas midpoint
+
+**Target:** "Selecting any protein must... move that protein into the usable visual centre... centre it between the right edge of the identity panel and the left edge of any right-side controls... account for actual measured panel bounds."
+
+**Implemented:** `computeFramingTarget()` in `WorldCanvas.tsx` measures `.hx-identity`'s real `getBoundingClientRect()` and, when mounted, `.hx-inspect`/`.hx-design`'s real left edge, computes the midpoint between them in screen space, and offsets the camera's look-at target (not the protein's real world position — the petri dish is always drawn at the protein's actual position) along the camera's screen-right axis so the protein renders at that midpoint instead of the raw canvas centre. Re-applied on `SELECT_PROTEIN`, `INSPECT_STRUCTURE`, `TOGGLE_THREADS`, and on window resize (which also re-captures the `"protein"` camera-level snapshot so a later Structure→Protein return stays correctly centred).
+
+**Reason:** Previously the camera always targeted the protein's exact position, which puts it at the literal canvas midpoint — with the identity panel occupying the left ~30–40% of the screen, the "centred" protein visually read as off-centre to the right, confirmed by screenshot (petri dish at x≈960 on a 1920px canvas where the panel-aware centre is ≈1250).
+
+**Impact:** Verified via screenshot at 1920×1080 in both themes and after entering Inspect (where the Inspect panel also claims the right side) — the selected protein now renders roughly centred in the actual usable gap.
+
+**Temporary:** No.
+
+---
+
+## 16. Petri-dish tint changed for real light-mode contrast
+
+**Target:** "The petri-dish selection marker must be... faint but unmistakably visible in light mode."
+
+**Implemented:** Light-mode `dishTint` changed from `#f3f1ea` (nearly identical to the light fog background `#efece4`) to a pale teal-grey `#d8e4e0` with a real luminance gap from the background.
+
+**Reason:** The old tint was visually almost indistinguishable from the surrounding fog/point field in light mode — confirmed by screenshot — failing "unmistakably visible."
+
+**Impact:** The dish is now a faint but genuinely readable disc in light mode; dark mode (already passing) is unchanged.
+
+**Temporary:** No.
+
+---
+
+## 17. Relationship-thread camera fitting on reveal; theme-aware colour; restrained default opacity
+
+**Target:** "When relationships are revealed inside a cluster:... fit the selected protein and all displayed relationship targets inside the usable viewport... render lines white in dark mode, render lines black or near-black in light mode; use restrained opacity until selected or hovered."
+
+**Implemented:** `TOGGLE_THREADS` is now a real camera-choreography case: revealing threads fits a bounding-sphere framing (with margin) around the selected protein and every real thread endpoint (via the new `computeThreadEndpoints()` in `relationships.ts`, shared with the endpoint-projection test); hiding threads re-centres back on the protein alone using the same panel-aware framing as selection. Thread line colour is now theme-driven (`#141414` light / `#ffffff` dark) and recolored in place on theme toggle. Base thread opacity lowered from a flat `0.7` to `0.45`.
+
+**Reason:** Previously `TOGGLE_THREADS` had no camera effect at all — a related protein outside the current framing (or outside the cluster) could render its thread off-screen or barely visible. Thread colour was a fixed teal in both themes, and did not react to a theme change without a full reselection.
+
+**Impact:** Verified structurally (thread endpoints now come from a single, tested source of truth — see `relationships.test.ts` and the e2e endpoint-projection test) and by code reading for the camera-fit and colour logic.
+
+**Temporary:** No.
+
+---
+
+## 18. `CLOSE_PROTEIN`: a new command distinct from `RETURN_ONE_LEVEL`, and it preserves the active query
+
+**Target:** "Only the close button on the identity panel is allowed to fully clear the protein view and return to the cluster or inventory (Universe) view... Back and Escape must trigger a one-level return."
+
+**Implemented:** A new `CLOSE_PROTEIN` scene command, wired only to the identity panel's × button, that always fully clears Protein/Structure/Design/Sequence state and returns directly to the cluster (if the protein was reached from one) or Universe in a single step — regardless of whether Glance, Inspect, or Design is currently showing. `RETURN_ONE_LEVEL` (Back/Escape/the header's `‹ BACK`) is untouched and continues to step up exactly one level at a time (Structure → Protein-with-panel-still-open → Cluster/Universe). Unlike the header's explicit "return to Universe" action (`RETURN_TO_UNIVERSE`, which is a deliberate reset), `CLOSE_PROTEIN` preserves an active query rather than discarding it — closing a protein you reached via a search is not the same user intent as pressing Home.
+
+**Reason:** Previously the identity panel's × button was wired to the same `RETURN_ONE_LEVEL` action as Back/Escape, so closing from Inspect only returned to Glance (protein still selected, panel still open) rather than fully clearing the selection as specified — the user had to click twice.
+
+**Impact:** Verified with new reducer unit tests (`atlas.test.ts`) covering close-from-Inspect, close-from-Design, and the query-preservation case, plus the existing Back/Escape/Depth-Rail behavior remaining verifiably unchanged (a direct one-vs-the-other comparison test).
+
+**Temporary:** No.
+
+---
+
+## 19. Structure-loading: representation switching no longer redownloads/reparses; sandbox network caveat
+
+**Target:** "No repeated structure parsing when representation controls change... target first meaningful structure render within 3 seconds... Do not describe ordinary slow loading as merely an external CORS issue without measurement."
+
+**Implemented:** `StructureView.tsx` split into two effects: one that downloads and parses the structure (depends only on `active`/`structure`/`retryKey`), and one that applies the representation/colour-mode/ligand-visibility/confidence-coloring (depends on those plus a `structureGeneration` counter bumped once per successful parse). Switching representation, colour mode, or ligand visibility now deletes and rebuilds only the Mol* representation state objects it previously created, never redownloading or reparsing the underlying structure or remounting the plugin — closing the gap the prior session's own acceptance matrix had already flagged as "Partial... not yet optimized."
+
+**Reason/measurement:** Direct timing showed structure fetches to `models.rcsb.org`/`alphafold.ebi.ac.uk` failing after ~13s in this sandbox with `ERR_CONNECTION_RESET`, even with Playwright's browser explicitly pointed at the same egress proxy `curl` succeeds through in under 1s from the same container — a sandbox-only browser-egress limitation (this environment's Chromium is not configured to route through the agent proxy the way command-line tools are), not application slowness; the same class of caveat as the already-documented SwiftShader/software-GPU note in `CURRENT_STATE.md`. This was measured, not assumed, before concluding it — see the diagnostic trace in this session's `AI_DEVELOPMENT_LOG.md` entry. The representation-effect split, by contrast, is a real, verifiable code-level fix (confirmed via `tsc`/`eslint` against Mol*'s own types) independent of network reachability, and directly closes the one concrete, previously-documented performance gap in this codebase.
+
+**Impact:** Toggling CARTOON/SURFACE/BALL-AND-STICK/SPACEFILL, COLOR chain/domain, or LIGANDS no longer re-fetches or re-parses the structure. Full visual confirmation of the optimized path (first-frame timing under real network conditions) could not be completed in this sandbox and is recommended as a follow-up smoke test in an environment with real outbound browser networking.
+
+**Temporary:** The 3-second full-network verification is deferred to an environment where it's actually measurable; the code-level fix itself is permanent.
+
+---
+
+## 20. Onboarding built from scratch — none existed on the PR #11 baseline
+
+**Target:** "Do not display an immediate mandatory multi-step modal on first load... after ~6–10 seconds... show one quiet invitation... anchored contextual coach marks... permanent GUIDE entry in header."
+
+**Implemented:** `useOnboarding.ts` + `Onboarding.tsx`: a quiet, non-blocking "New to the Atlas?" invitation appears after 7s of no meaningful interaction (never if the user has already selected a protein, entered a cluster, or run a query), offers "Show me around" / "I'll explore," and both choices persist via `localStorage` and never reappear uninvited. Accepting opens a 7-step anchored coach-mark sequence (orbit/pan/zoom, cluster entry, protein selection, Depth Rail, Query, Ask Atlas, and where to find GUIDE again) that rings the real target element (`getBoundingClientRect()`-measured, live-updated) without covering it, and supports Next/Back/Skip/Finish/Escape/arrow-key navigation. A permanent `GUIDE` button in the header replays it on demand regardless of prior dismissal state.
+
+**Reason:** There was no onboarding of any kind on the PR #11 baseline this branch is built from — this is new construction against the spec, not a correction of a PR #12 regression.
+
+**Impact:** Verified end-to-end with Playwright: the invitation is absent immediately on load, appears after the delay, is non-blocking (canvas stays interactive underneath), declines persist across reload, and the coach-mark ring correctly tracks and never disables its target control.
+
+**Temporary:** No.

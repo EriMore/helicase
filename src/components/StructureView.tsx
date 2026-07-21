@@ -9,6 +9,7 @@ import { Color } from "molstar/lib/mol-util/color";
 import { StructureSelectionQuery } from "molstar/lib/mol-plugin-state/helpers/structure-selection-query";
 import { MolScriptBuilder as B } from "molstar/lib/mol-script/language/builder";
 import { StructureElement, StructureProperties, type Structure } from "molstar/lib/mol-model/structure";
+import type { StateObjectSelector } from "molstar/lib/mol-state";
 import { createRoot, type Root } from "react-dom/client";
 import type { StructureReference } from "@/domain/atlas-data";
 
@@ -39,11 +40,20 @@ export function StructureView({ active, structure: structureReference, confidenc
   const host = useRef<HTMLDivElement>(null);
   const pluginRef = useRef<Awaited<ReturnType<typeof createPluginUI>> | null>(null);
   const structureDataRef = useRef<Structure | null>(null);
+  const structureCellRef = useRef<StateObjectSelector | null>(null);
+  const repRefsRef = useRef<StateObjectSelector[]>([]);
   const onResiduePickRef = useRef(onResiduePick);
   const [status, setStatus] = useState<StructureStatus>("loading");
+  // Bumped once per successful download+parse; the representation effect below re-runs on
+  // every bump *and* on every representation/colorMode/showLigands/confidenceActive change,
+  // without ever re-triggering a redownload or reparse of the underlying structure.
+  const [structureGeneration, setStructureGeneration] = useState(0);
 
   useEffect(() => { onResiduePickRef.current = onResiduePick; }, [onResiduePick]);
 
+  // Download + parse only. Depends solely on which structure identity should be mounted —
+  // never on representation/colorMode/showLigands/confidenceActive, so switching those
+  // controls can never trigger a redownload, a reparse, or a full plugin remount.
   useEffect(() => {
     if (!active || !host.current || !structureReference) return;
     let disposed = false;
@@ -93,6 +103,7 @@ export function StructureView({ active, structure: structureReference, confidenc
           },
         });
         pluginRef.current = plugin;
+        repRefsRef.current = [];
         if (disposed) {
           disposeInstance();
           return;
@@ -136,6 +147,7 @@ export function StructureView({ active, structure: structureReference, confidenc
         if (disposed) return;
         const structure = await plugin.builders.structure.createStructure(model);
         structureDataRef.current = structure.obj?.data ?? null;
+        structureCellRef.current = structure;
         if (disposed) return;
         clickSubscription = plugin.behaviors.interaction.click.subscribe((event) => {
           const loci = event.current.loci;
@@ -146,6 +158,41 @@ export function StructureView({ active, structure: structureReference, confidenc
           const chain = StructureProperties.chain.auth_asym_id(location);
           onResiduePickRef.current?.(residueNumber, chain);
         });
+        // Signals the representation effect to build the initial representation — it owns
+        // requestResize/requestCameraReset and flips status to "ready" once that's done.
+        if (!disposed) setStructureGeneration((current) => current + 1);
+      } catch {
+        if (!disposed) { setStatus("unavailable"); onStatusChange?.("unavailable"); }
+      }
+    };
+
+    void initialize();
+    return () => {
+      disposed = true; pluginRef.current = null; structureDataRef.current = null; structureCellRef.current = null; repRefsRef.current = [];
+      disposeInstance();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, structureReference, retryKey]);
+
+  // Representation application only: reuses the already-downloaded, already-parsed structure
+  // from the effect above. Deleting and re-adding just the representation/component state
+  // objects is cheap relative to a full redownload+reparse, and never remounts the plugin.
+  useEffect(() => {
+    const plugin = pluginRef.current;
+    const structure = structureCellRef.current;
+    if (!active || !plugin || !structure || !structureReference || structureGeneration === 0) return;
+    let cancelled = false;
+
+    const apply = async () => {
+      try {
+        for (const ref of repRefsRef.current) {
+          try { await plugin.build().delete(ref).commit(); } catch { /* already gone with the structure */ }
+        }
+        repRefsRef.current = [];
+        if (cancelled) return;
+
+        const experimental = structureReference.kind === "experimental";
+        const created: StateObjectSelector[] = [];
         if (!experimental && confidenceActive) {
           await plugin.builders.structure.representation.applyPreset(structure, QualityAssessmentPLDDTPreset);
         } else if (colorMode === "domain" && domains.length > 0) {
@@ -156,6 +203,7 @@ export function StructureView({ active, structure: structureReference, confidenc
             });
             const component = await plugin.builders.structure.tryCreateComponentFromExpression(structure, expression, `domain-${domain.start}-${domain.end}`, { tags: [`domain-${domain.start}-${domain.end}`] });
             if (component) {
+              created.push(component);
               await plugin.builders.structure.representation.addRepresentation(component, representation === "cartoon"
                 ? { type: "cartoon", color: "uniform", colorParams: { value: Color(parseInt(domain.color.replace("#", ""), 16)) }, typeParams: { alpha: 1, quality: "high" } }
                 : { ...REPRESENTATION_PARAMS[representation], color: "uniform", colorParams: { value: Color(parseInt(domain.color.replace("#", ""), 16)) } });
@@ -164,34 +212,42 @@ export function StructureView({ active, structure: structureReference, confidenc
         } else {
           const polymer = await plugin.builders.structure.tryCreateComponentStatic(structure, "polymer");
           const colorTheme = colorMode === "chain" ? "chain-id" : "uniform";
-          if (polymer) await plugin.builders.structure.representation.addRepresentation(polymer, representation === "cartoon"
-            ? { type: "cartoon", color: colorTheme, colorParams: colorTheme === "uniform" ? { value: Color(TEAL) } : undefined, typeParams: { alpha: 1, quality: "high" } }
-            : { ...REPRESENTATION_PARAMS[representation], color: colorTheme, colorParams: colorTheme === "uniform" ? { value: Color(TEAL) } : undefined });
+          if (polymer) {
+            created.push(polymer);
+            await plugin.builders.structure.representation.addRepresentation(polymer, representation === "cartoon"
+              ? { type: "cartoon", color: colorTheme, colorParams: colorTheme === "uniform" ? { value: Color(TEAL) } : undefined, typeParams: { alpha: 1, quality: "high" } }
+              : { ...REPRESENTATION_PARAMS[representation], color: colorTheme, colorParams: colorTheme === "uniform" ? { value: Color(TEAL) } : undefined });
+          }
         }
+        if (cancelled) return;
         const ligand = showLigands ? await plugin.builders.structure.tryCreateComponentStatic(structure, "ligand") : null;
         if (ligand) {
+          created.push(ligand);
           await plugin.builders.structure.representation.addRepresentation(ligand, {
             type: "ball-and-stick",
             color: "element-symbol",
             typeParams: { alpha: 1, quality: "high" },
           });
         }
+        repRefsRef.current = created;
+        if (cancelled) return;
         plugin.canvas3d?.requestResize();
         plugin.canvas3d?.requestCameraReset({ durationMs: 0 });
         window.requestAnimationFrame(() => {
-          if (disposed) return;
-          plugin?.canvas3d?.requestResize();
-          plugin?.canvas3d?.requestCameraReset({ durationMs: 0 });
+          if (cancelled) return;
+          plugin.canvas3d?.requestResize();
+          plugin.canvas3d?.requestCameraReset({ durationMs: 0 });
         });
-        if (!disposed) { setStatus("ready"); onStatusChange?.("ready"); }
+        if (!cancelled) { setStatus("ready"); onStatusChange?.("ready"); }
       } catch {
-        if (!disposed) { setStatus("unavailable"); onStatusChange?.("unavailable"); }
+        if (!cancelled) { setStatus("unavailable"); onStatusChange?.("unavailable"); }
       }
     };
 
-    void initialize();
-    return () => { disposed = true; pluginRef.current = null; structureDataRef.current = null; disposeInstance(); };
-  }, [active, confidenceActive, onStatusChange, representation, colorMode, domains, retryKey, showLigands, structureReference]);
+    void apply();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, structureGeneration, representation, colorMode, domains, showLigands, confidenceActive, structureReference]);
 
   // Lighting/rotation are visual-only and cheap to re-apply, so they live in their
   // own effect instead of the init effect above — toggling either must never trigger

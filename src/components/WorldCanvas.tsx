@@ -5,17 +5,34 @@ import * as THREE from "three";
 import type { SceneState } from "@/domain/atlas";
 import type { AtlasProtein } from "@/domain/atlas-data";
 import { territories, territoryCenter, territoryIndexForRegion, worldPosition } from "@/domain/territories";
-import { computeRelationshipThreads } from "@/domain/relationships";
+import { computeRelationshipThreads, computeThreadEndpoints } from "@/domain/relationships";
 import { CAMERA_FAR, CAMERA_FOV, CAMERA_NEAR, CameraEngine, TWEEN_MS } from "@/engine/camera-navigation";
 
 export type Theme = "light" | "dark";
 export type WorldMetrics = { fps: number; visibleCount: number };
 
-const THEME_TABLE: Record<Theme, { fam: string[]; teal: string; fog: string; fogNear: number; fogFar: number; size: number; additive: boolean; dimNon: number; glow: string; dishTint: string; dishRim: string }> = {
-  light: { fam: ["#3c5a86", "#8f4a44", "#3f6f60", "#9a7a34", "#6a4a70", "#4a4f57"], teal: "#0c8c78", fog: "#efece4", fogNear: 300, fogFar: 1200, size: 22, additive: false, dimNon: 0.30, glow: "#22262b", dishTint: "#f3f1ea", dishRim: "#ffffff" },
-  dark: { fam: ["#7d97d0", "#d68b83", "#5fc6a6", "#d9b96e", "#b490c8", "#9aa2b0"], teal: "#34d6b8", fog: "#0d1013", fogNear: 440, fogFar: 2400, size: 26, additive: true, dimNon: 0.26, glow: "#ffffff", dishTint: "#11141a", dishRim: "#9fd8ff" },
+export type AtlasTestHooks = {
+  projectWorldToScreen: (position: readonly [number, number, number]) => { x: number; y: number } | null;
+  getProteinWorldPosition: (proteinId: string) => [number, number, number] | null;
+  getVisibleThreadEndpoints: () => { proteinId: string; from: [number, number, number]; to: [number, number, number] }[];
+  getQueryResultIds: () => string[];
+};
+declare global {
+  interface Window {
+    __atlasTestHooks?: AtlasTestHooks;
+  }
+}
+
+// Light mode is the flagship theme: family hues are deliberately more saturated
+// and darker fog/dim values than a naive "just invert dark mode" pass would use,
+// so the Universe reads as vivid and alive rather than pale/washed out against the
+// light fog background. See docs/handoff/DESIGN_DELTA.md.
+const THEME_TABLE: Record<Theme, { fam: string[]; teal: string; fog: string; fogNear: number; fogFar: number; size: number; additive: boolean; dimNon: number; glow: string; dishTint: string; dishRim: string; threadColor: string }> = {
+  light: { fam: ["#254a80", "#a13c34", "#1f7a5e", "#a8790f", "#7a3f8c", "#33404d"], teal: "#0c8c78", fog: "#efece4", fogNear: 420, fogFar: 1600, size: 23, additive: false, dimNon: 0.32, glow: "#161a1f", dishTint: "#d8e4e0", dishRim: "#ffffff", threadColor: "#141414" },
+  dark: { fam: ["#7d97d0", "#d68b83", "#5fc6a6", "#d9b96e", "#b490c8", "#9aa2b0"], teal: "#34d6b8", fog: "#0d1013", fogNear: 440, fogFar: 2400, size: 26, additive: true, dimNon: 0.26, glow: "#ffffff", dishTint: "#11141a", dishRim: "#9fd8ff", threadColor: "#ffffff" },
 };
 const THREAD_LIMIT = 5;
+const THREAD_BASE_OPACITY = 0.45;
 
 const pointVertexShader = `
 attribute vec3 color;
@@ -56,12 +73,18 @@ void main() {
   float fogMix = uTheme < 0.5 ? 0.9 : 0.35;
   c = mix(c, uFog, vFog * fogMix * (1.0 - vMatch));
   float alpha = a;
-  alpha *= mix(1.0, 1.0 - vFog * 0.82, step(uTheme, 0.5));
+  alpha *= mix(1.0, 1.0 - vFog * 0.55, step(uTheme, 0.5));
   alpha *= mix(1.0, 0.42, step(0.5, uTheme)) * (1.0 - vMatch) + vMatch;
   alpha *= uDim;
   float keep = max(vMatch, vExempt);
   alpha *= mix(uDimNon, 1.0, keep);
-  if (uTerritoryFocus > 0.5) { float m = abs(vTerritory - uActiveTerritory) < 0.5 ? 1.0 : uDimNon; alpha *= mix(m, 1.0, keep); }
+  // Cluster isolation is binary, not a dim: a point outside the active cluster
+  // (and not an explicitly revealed relationship target) is fully hidden — not
+  // hoverable, not selectable, not a faded background particle.
+  if (uTerritoryFocus > 0.5) {
+    float inCluster = abs(vTerritory - uActiveTerritory) < 0.5 ? 1.0 : 0.0;
+    alpha *= max(inCluster, vExempt);
+  }
   gl_FragColor = vec4(c, clamp(alpha, 0.0, 1.0));
 }`;
 
@@ -97,6 +120,8 @@ type ThreeRefs = {
   dish: THREE.Mesh; dishMaterial: THREE.ShaderMaterial; raycaster: THREE.Raycaster; threadGroup: THREE.Group;
   proteinList: AtlasProtein[];
   threadKey: string;
+  /** Related-protein ids exempted from the active cluster's hard-hide/hover/pick gate. */
+  exemptIds: Set<string>;
 };
 
 type WorldCanvasProps = {
@@ -205,6 +230,13 @@ export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTe
     t.material.needsUpdate = true;
     t.dishMaterial.uniforms.uTint.value.set(table.dishTint);
     t.dishMaterial.uniforms.uRim.value.set(table.dishRim);
+    // Relationship threads render white in dark mode, black/near-black in light mode —
+    // recolor any already-built thread lines in place rather than waiting for the next
+    // selection change to rebuild them.
+    t.threadGroup.children.forEach((child) => {
+      const lineMaterial = (child as THREE.Line).material as THREE.LineBasicMaterial;
+      lineMaterial.color.set(table.threadColor);
+    });
   }, [theme]);
 
   // Selection/query highlight — recomputed whenever what's "primary" changes.
@@ -236,19 +268,56 @@ export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTe
     } else if (command === "SELECT_PROTEIN" && scene.selectedProteinId) {
       cam.captureLevel(scene.territoryId ? "territory" : "universe");
       const protein = t.proteinList.find((candidate) => candidate.id === scene.selectedProteinId);
-      if (protein) {
+      if (protein && container.current) {
+        // The petri dish is always drawn at the protein's real, unmodified position — the
+        // camera target is what shifts to bring it into the usable visual centre (left of
+        // the identity panel is off-limits; the on-screen point itself never moves).
         const point = new THREE.Vector3(...worldPosition(protein.position));
         t.dish.position.copy(point); t.dish.visible = true;
-        cam.applyTarget({ target: point, r: 150, theta: cam.cam.theta, phi: 1.05 }, TWEEN_MS.selectProtein);
+        const r = 150;
+        const framingTarget = computeFramingTarget(point, container.current, r, cam.cam.theta);
+        cam.applyTarget({ target: framingTarget, r, theta: cam.cam.theta, phi: 1.05 }, TWEEN_MS.selectProtein);
       }
     } else if (command === "INSPECT_STRUCTURE") {
       cam.captureLevel("protein");
-      cam.applyTarget({ target: cam.cam.target.clone(), r: 90, theta: cam.cam.theta + 0.5, phi: 1.02 }, TWEEN_MS.inspectStructure);
+      const protein = t.proteinList.find((candidate) => candidate.id === scene.selectedProteinId);
+      if (protein && container.current) {
+        const r = 90;
+        const theta = cam.cam.theta + 0.5;
+        const point = new THREE.Vector3(...worldPosition(protein.position));
+        const framingTarget = computeFramingTarget(point, container.current, r, theta);
+        cam.applyTarget({ target: framingTarget, r, theta, phi: 1.02 }, TWEEN_MS.inspectStructure);
+      } else {
+        cam.applyTarget({ target: cam.cam.target.clone(), r: 90, theta: cam.cam.theta + 0.5, phi: 1.02 }, TWEEN_MS.inspectStructure);
+      }
+    } else if (command === "TOGGLE_THREADS" && scene.selectedProteinId) {
+      const selected = t.proteinList.find((candidate) => candidate.id === scene.selectedProteinId);
+      if (selected && container.current) {
+        if (scene.threadsOn) {
+          // Revealing relationships inside a cluster keeps the cluster's own proteins and adds
+          // only the verified related proteins outside it — the camera must fit the selected
+          // protein and every displayed thread target inside the usable viewport with margin.
+          const threads = computeRelationshipThreads(selected, t.proteinList, THREAD_LIMIT);
+          const endpoints = computeThreadEndpoints(selected, threads);
+          const points = [new THREE.Vector3(...endpoints[0]?.from ?? worldPosition(selected.position)), ...endpoints.map((endpoint) => new THREE.Vector3(...endpoint.to))];
+          const bounds = new THREE.Box3().setFromPoints(points);
+          const center = bounds.getCenter(new THREE.Vector3());
+          const span = bounds.getSize(new THREE.Vector3()).length();
+          const r = THREE.MathUtils.clamp(span * 0.9 + 140, 160, 1500);
+          const framingTarget = computeFramingTarget(center, container.current, r, cam.cam.theta);
+          cam.applyTarget({ target: framingTarget, r, theta: cam.cam.theta, phi: cam.cam.phi }, TWEEN_MS.selectProtein);
+        } else {
+          const point = new THREE.Vector3(...worldPosition(selected.position));
+          const r = 150;
+          const framingTarget = computeFramingTarget(point, container.current, r, cam.cam.theta);
+          cam.applyTarget({ target: framingTarget, r, theta: cam.cam.theta, phi: 1.05 }, TWEEN_MS.selectProtein);
+        }
+      }
     } else if (command === "START_DESIGN") {
       cam.applyTarget({ target: cam.cam.target.clone(), r: 100, theta: cam.cam.theta + 0.4, phi: 1.0 }, TWEEN_MS.startDesign);
     } else if (command === "EXIT_DESIGN") {
       cam.restoreLevel("protein", TWEEN_MS.returnToGlance);
-    } else if (command === "RETURN_ONE_LEVEL" || command === "NAV_TO_LEVEL") {
+    } else if (command === "RETURN_ONE_LEVEL" || command === "NAV_TO_LEVEL" || command === "CLOSE_PROTEIN") {
       if (scene.mode === "glance") { t.dish.visible = true; cam.restoreLevel("protein", TWEEN_MS.returnToGlance); }
       else if (scene.mode === "territory" && scene.territoryId) {
         t.dish.visible = false;
@@ -293,7 +362,7 @@ export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTe
     } else if (command === "CLEAR_QUERY") {
       cam.applyTarget({ target: new THREE.Vector3(0, 0, 0), r: 900, theta: cam.cam.theta, phi: 1.12 }, TWEEN_MS.clearQuery);
     }
-  }, [scene.lastCommand, scene.mode, scene.territoryId, scene.selectedProteinId, scene.queryResultIds]);
+  }, [scene.lastCommand, scene.mode, scene.territoryId, scene.selectedProteinId, scene.queryResultIds, scene.threadsOn]);
 
   useEffect(() => {
     const mount = container.current;
@@ -344,7 +413,7 @@ export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTe
     const raycaster = new THREE.Raycaster();
     raycaster.params.Points = { threshold: 2.6 };
 
-    three.current = { renderer, sceneObj, camera, points, geometry: points.geometry, material, base: new Float32Array(0), target: new Float32Array(0), territoryIndex: new Int16Array(0), dish, dishMaterial, raycaster, threadGroup, proteinList: [], threadKey: "" };
+    three.current = { renderer, sceneObj, camera, points, geometry: points.geometry, material, base: new Float32Array(0), target: new Float32Array(0), territoryIndex: new Int16Array(0), dish, dishMaterial, raycaster, threadGroup, proteinList: [], threadKey: "", exemptIds: new Set() };
 
     const pointer = new THREE.Vector2();
     let pointerDown = false; let panning = false; let moved = 0; let lastX = 0; let lastY = 0; let hoveredId: string | null = null; let moveThrottle = 0;
@@ -365,13 +434,36 @@ export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTe
       raycaster.setFromCamera(pointer, camera);
       return raycaster.ray.origin.clone().add(raycaster.ray.direction.clone().multiplyScalar(engine.current.now.r));
     };
+    // Screen-space-reliable picking: the hit radius scales with camera distance (a fixed-FOV
+    // proxy for constant on-screen size) and is deliberately generous — independent of the
+    // rendered point radius — so a match never requires an exact tiny-point click. During an
+    // active query, non-matches are excluded entirely: they must never be hoverable or
+    // selectable. Inside an isolated cluster, points outside it (and not an explicitly
+    // revealed relationship target) are excluded the same way.
     const pickProtein = (): AtlasProtein | null => {
       const mode = sceneRef.current.mode;
       if (mode !== "universe" && mode !== "territory" && mode !== "glance") return null;
+      const t = three.current;
+      if (!t) return null;
+      const activeQuery = sceneRef.current.queryResultIds.length > 0;
+      const queryMatchSet = activeQuery ? new Set(sceneRef.current.queryResultIds) : null;
+      const activeTerritory = territories.findIndex((territory) => territory.id === sceneRef.current.territoryId);
       raycaster.setFromCamera(pointer, camera);
-      raycaster.params.Points!.threshold = Math.max(2.6, engine.current.now.r * 0.02);
-      const hit = raycaster.intersectObject(points, false)[0];
-      return hit?.index != null ? three.current!.proteinList[hit.index] ?? null : null;
+      const r = engine.current.now.r;
+      raycaster.params.Points!.threshold = Math.max(activeQuery ? 6.5 : 3.2, r * (activeQuery ? 0.05 : 0.024));
+      const hits = raycaster.intersectObject(points, false);
+      for (const hit of hits) {
+        if (hit.index == null) continue;
+        const protein = t.proteinList[hit.index];
+        if (!protein) continue;
+        if (activeQuery && !queryMatchSet!.has(protein.id)) continue;
+        if (mode === "territory" && activeTerritory >= 0) {
+          const idx = t.territoryIndex[hit.index];
+          if (idx !== activeTerritory && !t.exemptIds.has(protein.id)) continue;
+        }
+        return protein;
+      }
+      return null;
     };
 
     const onPointerDown = (event: PointerEvent) => {
@@ -441,6 +533,19 @@ export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTe
       camera.aspect = mount.clientWidth / Math.max(1, mount.clientHeight);
       camera.updateProjectionMatrix();
       renderer.setSize(mount.clientWidth, mount.clientHeight);
+      // Re-centre the selected protein's framing so it stays correct across viewport sizes
+      // and after resizing, not just at the moment of selection.
+      const currentScene = sceneRef.current;
+      if ((currentScene.mode === "glance" || currentScene.mode === "inspect") && currentScene.selectedProteinId) {
+        const protein = three.current?.proteinList.find((candidate) => candidate.id === currentScene.selectedProteinId);
+        if (protein) {
+          const point = new THREE.Vector3(...worldPosition(protein.position));
+          const cam = engine.current;
+          const framingTarget = computeFramingTarget(point, mount, cam.cam.r, cam.cam.theta);
+          cam.retarget(framingTarget);
+          if (currentScene.mode === "glance") cam.captureLevel("protein");
+        }
+      }
     };
     window.addEventListener("resize", onResize);
 
@@ -458,7 +563,12 @@ export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTe
 
       const targetDim = currentScene.mode === "inspect" ? 0.24 : currentScene.mode === "design" ? 0.06 : currentScene.mode === "glance" ? 0.55 : 1;
       material.uniforms.uDim.value += (targetDim - material.uniforms.uDim.value) * 0.08;
-      const dimNonTarget = currentScene.queryResultIds.length || currentScene.selectedProteinId || material.uniforms.uTerritoryFocus.value > 0.5 ? THEME_TABLE[themeRef.current].dimNon : 1;
+      // Cluster isolation hides non-cluster points outright (see uTerritoryFocus in the
+      // fragment shader) — merely being inside a cluster must not additionally dim the
+      // cluster's own members. uDimNon exists to make a primary selection/query match
+      // stand out from the rest of the (still-visible) field, so it only engages when
+      // there is an actual selection or query to be primary against.
+      const dimNonTarget = currentScene.queryResultIds.length || currentScene.selectedProteinId ? THEME_TABLE[themeRef.current].dimNon : 1;
       material.uniforms.uDimNon.value += (dimNonTarget - material.uniforms.uDimNon.value) * 0.08;
 
       const t = three.current;
@@ -483,13 +593,17 @@ export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTe
           const theta = engine.current.now.theta;
           t.dishMaterial.uniforms.uLightDir.value.set(Math.cos(theta * 0.6 + 0.8), Math.sin(theta * 0.6 + 0.8));
           t.dishMaterial.uniforms.uPulse.value = 0.5 + 0.5 * Math.sin(now * 0.0021);
+          // Fade the dish out while a structure/design view is mounted so it never
+          // competes with the molecular model; restore it fully back in Glance.
+          const dishOpacityTarget = currentScene.mode === "glance" ? 0.85 : 0.08;
+          t.dishMaterial.uniforms.uOpacity.value += (dishOpacityTarget - t.dishMaterial.uniforms.uOpacity.value) * 0.1;
         }
 
         // Relationship threads: rebuild only when the selection/toggle actually changes.
-        const showThreads = currentScene.mode === "glance" && currentScene.threadsOn && !!currentScene.selectedProteinId;
+        const showThreads = (currentScene.mode === "glance" || currentScene.mode === "inspect") && currentScene.threadsOn && !!currentScene.selectedProteinId;
         const threadKey = showThreads ? `${currentScene.selectedProteinId}` : "";
         if (threadKey !== t.threadKey) {
-          rebuildThreadGroup(t, showThreads ? currentScene.selectedProteinId : null);
+          rebuildThreadGroup(t, showThreads ? currentScene.selectedProteinId : null, themeRef.current);
           t.threadKey = threadKey;
         }
         const threadTargetOpacity = showThreads ? 1 : 0;
@@ -511,7 +625,35 @@ export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTe
     };
     render();
 
+    // Test-only projection hooks (harmless in production — pure read-only camera math, no
+    // data beyond what's already rendered). Lets e2e tests verify that a relationship
+    // thread's endpoints, once projected to screen space with the exact camera the renderer
+    // uses, land within tolerance of the corresponding protein's own on-screen position —
+    // the correctness gate a screenshot alone cannot prove.
+    const projectWorldToScreen = (position: readonly [number, number, number]) => {
+      const projected = new THREE.Vector3(...position).project(camera);
+      if (projected.z > 1) return null;
+      const rect = mount.getBoundingClientRect();
+      return { x: rect.left + (projected.x * 0.5 + 0.5) * rect.width, y: rect.top + (-projected.y * 0.5 + 0.5) * rect.height };
+    };
+    const getProteinWorldPosition = (proteinId: string) => {
+      const protein = three.current?.proteinList.find((candidate) => candidate.id === proteinId);
+      return protein ? worldPosition(protein.position) : null;
+    };
+    const getVisibleThreadEndpoints = () => {
+      const current = three.current;
+      const scene = sceneRef.current;
+      if (!current || !scene.selectedProteinId || !scene.threadsOn) return [];
+      const selected = current.proteinList.find((protein) => protein.id === scene.selectedProteinId);
+      if (!selected) return [];
+      const threads = computeRelationshipThreads(selected, current.proteinList, THREAD_LIMIT);
+      return computeThreadEndpoints(selected, threads);
+    };
+    const getQueryResultIds = () => sceneRef.current.queryResultIds;
+    window.__atlasTestHooks = { projectWorldToScreen, getProteinWorldPosition, getVisibleThreadEndpoints, getQueryResultIds };
+
     return () => {
+      delete window.__atlasTestHooks;
       cancelAnimationFrame(animationFrame);
       window.removeEventListener("resize", onResize);
       renderer.domElement.removeEventListener("pointerdown", onPointerDown);
@@ -540,7 +682,7 @@ export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTe
         style={{ display: "none" }}
         onClick={() => onEnterTerritory(territory.id)}
       >
-        <div className="hx-label-eyebrow">TERRITORY {String(index + 1).padStart(2, "0")}</div>
+        <div className="hx-label-eyebrow">CLUSTER {String(index + 1).padStart(2, "0")}</div>
         <div className="hx-label-name serif">{territory.label}</div>
         <div className="hx-label-enter mono">ENTER ›</div>
       </div>)}
@@ -550,6 +692,35 @@ export function WorldCanvas({ theme, scene, proteins, onSelectProtein, onEnterTe
       </div>
     </div>
   </>;
+}
+
+/**
+ * Deterministic protein-selection centring: the selected protein must sit in
+ * the usable visual centre — between the identity panel's real measured right
+ * edge and the left edge of whatever right-side panel (Inspect/Design) is
+ * mounted, not the raw canvas midpoint. Measured fresh from the DOM every
+ * time (not hardcoded CSS constants) so it stays correct across viewport
+ * sizes, resizes, and panel open/close. Uses the standard off-axis camera
+ * trick: shift the look-at target away from the protein along the camera's
+ * screen-right axis so the protein itself renders at the desired NDC x.
+ */
+function computeFramingTarget(proteinWorld: THREE.Vector3, mount: HTMLElement, r: number, theta: number): THREE.Vector3 {
+  const mountRect = mount.getBoundingClientRect();
+  const width = mountRect.width || mount.clientWidth || 1;
+  const height = mountRect.height || mount.clientHeight || 1;
+  const identityEl = document.querySelector(".hx-identity");
+  const rightPanelEl = document.querySelector(".hx-inspect, .hx-design");
+  const leftBound = identityEl ? identityEl.getBoundingClientRect().right : mountRect.left + 26;
+  const rightBound = rightPanelEl ? rightPanelEl.getBoundingClientRect().left : mountRect.right - 26;
+  const centerX = (leftBound + rightBound) / 2;
+  const fraction = (centerX - mountRect.left) / width;
+  const ndcOffset = THREE.MathUtils.clamp((fraction - 0.5) * 2, -0.85, 0.85);
+  const aspect = width / Math.max(1, height);
+  const tanHalfV = Math.tan(THREE.MathUtils.degToRad(CAMERA_FOV) / 2);
+  const tanHalfH = tanHalfV * aspect;
+  // Camera-right axis for a spherical-orbit camera with worldUp=(0,1,0) is always horizontal.
+  const right = new THREE.Vector3(Math.sin(theta), 0, -Math.cos(theta));
+  return proteinWorld.clone().addScaledVector(right, -ndcOffset * r * tanHalfH);
 }
 
 function applyTerritoryLayout(t: ThreeRefs, activeTerritory: number) {
@@ -568,28 +739,35 @@ function applyTerritoryLayout(t: ThreeRefs, activeTerritory: number) {
   t.material.uniforms.uTerritoryFocus.value = activeTerritory >= 0 ? 1 : 0;
 }
 
-function rebuildThreadGroup(t: ThreeRefs, selectedProteinId: string | null) {
+function rebuildThreadGroup(t: ThreeRefs, selectedProteinId: string | null, theme: Theme) {
   disposeThreadChildren(t.threadGroup);
   const exemptAttr = t.points.geometry.getAttribute("aExempt") as THREE.BufferAttribute | undefined;
   if (exemptAttr) { for (let i = 0; i < exemptAttr.count; i += 1) exemptAttr.setX(i, 0); }
+  t.exemptIds = new Set();
   if (!selectedProteinId) { if (exemptAttr) exemptAttr.needsUpdate = true; return; }
   const selected = t.proteinList.find((protein) => protein.id === selectedProteinId);
   if (!selected) { if (exemptAttr) exemptAttr.needsUpdate = true; return; }
   const threads = computeRelationshipThreads(selected, t.proteinList, THREAD_LIMIT);
-  const from = new THREE.Vector3(...worldPosition(selected.position));
+  // computeThreadEndpoints() is the single source of truth for thread anchoring — every
+  // endpoint is the real, currently-scaled worldPosition() of the selected/related protein,
+  // never a stale or approximate coordinate (see relationships.test.ts).
+  const endpoints = computeThreadEndpoints(selected, threads);
   const relatedIds = new Set(threads.map((thread) => thread.protein.id));
+  t.exemptIds = relatedIds;
   if (exemptAttr) {
     t.proteinList.forEach((protein, index) => { if (relatedIds.has(protein.id)) exemptAttr.setX(index, 1); });
     exemptAttr.needsUpdate = true;
   }
-  threads.forEach((thread, index) => {
-    const to = new THREE.Vector3(...worldPosition(thread.protein.position));
+  const color = THEME_TABLE[theme].threadColor;
+  endpoints.forEach((endpoint, index) => {
+    const from = new THREE.Vector3(...endpoint.from);
+    const to = new THREE.Vector3(...endpoint.to);
     const mid = from.clone().add(to).multiplyScalar(0.5);
     mid.y += 30 + index * 10;
     const curve = new THREE.QuadraticBezierCurve3(from, mid, to);
     const lineGeometry = new THREE.BufferGeometry().setFromPoints(curve.getPoints(48));
-    const lineMaterial = new THREE.LineBasicMaterial({ color: "#0c8c78", transparent: true, opacity: 0 });
-    lineMaterial.userData.baseOpacity = 0.7;
+    const lineMaterial = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0 });
+    lineMaterial.userData.baseOpacity = THREAD_BASE_OPACITY;
     const line = new THREE.Line(lineGeometry, lineMaterial);
     t.threadGroup.add(line);
   });
@@ -609,7 +787,10 @@ function disposeThreadGroup(group: THREE.Group) {
 
 function projectLabels(camera: THREE.PerspectiveCamera, mount: HTMLDivElement, territoryEls: HTMLDivElement[], scene: SceneState, hoveredId: string | null, proteins: AtlasProtein[], hoverLabel: HTMLDivElement | null) {
   const width = mount.clientWidth; const height = mount.clientHeight;
-  const showTerritories = scene.mode === "universe" || scene.mode === "territory";
+  // Cluster labels only make sense as "enter" affordances in the Universe. Once inside a
+  // cluster the scene is isolated to it — no other cluster's label (an "outside" affordance)
+  // should linger, faded or otherwise.
+  const showTerritories = scene.mode === "universe";
   const projected = new THREE.Vector3();
   // The query bar (top:78px, right:26px, width min(660, 66vw), plus its results/suggestions
   // row) sits above the world and is itself interactive — a territory label projected under
@@ -633,7 +814,7 @@ function projectLabels(camera: THREE.PerspectiveCamera, mount: HTMLDivElement, t
       el.style.left = `${left}px`;
       el.style.top = `${top}px`;
       el.style.display = "block";
-      el.style.opacity = scene.mode === "territory" ? (scene.territoryId === territory.id ? "1" : "0.12") : "1";
+      el.style.opacity = "1";
     } else {
       el.style.display = "none";
     }

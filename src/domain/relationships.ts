@@ -1,5 +1,6 @@
 import type { AtlasProtein } from "./atlas-data";
 import { explainProximity } from "./spatialization";
+import { worldPosition } from "./territories";
 
 export type RelationshipThread = {
   protein: AtlasProtein;
@@ -38,4 +39,18 @@ export function computeRelationshipThreads(selected: AtlasProtein, pool: AtlasPr
     }
     return { protein: candidate, type: "Shared classification", status: "Computed", basis: `Both classified under the ${selected.region} annotation region.` };
   });
+}
+
+export type RelationshipThreadEndpoint = { proteinId: string; from: [number, number, number]; to: [number, number, number] };
+
+/**
+ * The single source of truth for where a relationship thread is anchored in
+ * world space, shared by WorldCanvas's rendering and by tests. Both endpoints
+ * always come from `worldPosition()` applied to the real protein positions —
+ * never a cached, approximate, or stale coordinate — so a thread can never
+ * visually emanate from or terminate at empty space.
+ */
+export function computeThreadEndpoints(selected: AtlasProtein, threads: RelationshipThread[]): RelationshipThreadEndpoint[] {
+  const from = worldPosition(selected.position);
+  return threads.map((thread) => ({ proteinId: thread.protein.id, from, to: worldPosition(thread.protein.position) }));
 }
