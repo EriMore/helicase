@@ -11,9 +11,7 @@ Helicase Atlas is a browser-native scientific instrument for navigating a spatia
 - Verified AlphaFold per-residue pLDDT Confidence X-Ray, unavailable by design for experimental PDB entries.
 - RCSB/SIFTS chain and UniProt residue-coverage metadata for experimental structures.
 - Cartoon, molecular-surface, ball-and-stick, ligand, and residue-range focus controls behind the structure adapter.
-- An attributable precomputed ProteinMPNN sequence-redesign journey for UniProt A5F934 / PDB 6EHB. It stops before unsupported structure, affinity, or wet-lab validation claims.
-- `design_binder` maps an eligible request to that imported artifact; it never generates a sequence or claims binding. The player supports play, pause, scrub, step, comparison, provenance inspection, and return to source context.
-- `design_binder` maps an eligible request to that imported artifact; it never generates a sequence or claims binding. The player supports play, pause, scrub, step, comparison, provenance inspection, and return to source context.
+- An attributable precomputed ProteinMPNN sequence-redesign journey for UniProt A5F934 / PDB 6EHB, played as a continuous, scrubbable 6-beat timeline (play/pause, seek, per-beat jump, candidate comparison with a real sequence diff) rather than a click-through wizard. It stops before unsupported structure, affinity, or wet-lab validation claims.
 - Streamed GPT-5.6 Responses API integration with strict runtime-validated scene tools and an explicit offline fallback.
 
 ## Run locally
@@ -22,11 +20,17 @@ Requirements: Node.js 20+ and npm.
 
 ```bash
 npm ci
-copy .env.example .env.local
+cp .env.example .env.local
 npm run dev
 ```
 
-Open `http://localhost:3000`. Add `OPENAI_API_KEY` to `.env.local` for the credentialed copilot. Without it, Atlas clearly identifies the local command fallback; search, structures, confidence, design evidence, and navigation remain functional.
+Open `http://localhost:3000`. For the credentialed Ask Atlas copilot, put a real key in `.env.local`:
+
+```text
+OPENAI_API_KEY=<your key>
+```
+
+`OPENAI_API_KEY` is read server-side only (`app/api/copilot/route.ts`) — it is never a `NEXT_PUBLIC_` variable and never reaches client-side code. Without it (or if the OpenAI request genuinely fails), Ask Atlas shows the explicit local-command-fallback message ("The credentialed reasoning service is unavailable…") rather than silently pretending to be GPT-5.6; search, structures, confidence, design evidence, and navigation all remain fully functional either way.
 
 ## Validate
 

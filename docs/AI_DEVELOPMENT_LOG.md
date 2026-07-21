@@ -1,5 +1,237 @@
 ---
 
+## 2026-07-21T17:15:00+00:00 — Final MVP stabilization pass on merged PR #11
+
+**Phase:** Bug Fix / Polish
+
+**Objective**
+Preserve PR #11's Claude-Design implementation as the authoritative baseline and land only the final, explicitly-scoped corrections requested for the Build Week MVP: cluster isolation, deterministic selection centring, petri-dish visibility, relationship-thread correctness (with an automated screen-projection test), query-match hit-reliability (with an automated test), light-mode vibrancy, structure-loading investigation, close-button semantics, optional/contextual onboarding, and GPT-5.6 credential handling. PR #12 (closed, unmerged) was inspected only as diagnostic evidence of what had regressed, never merged or transplanted.
+
+**Completed**
+- **Found and fixed a release-blocking bug before anything else was testable**: `atlasProteinSchema.name` (256-char cap) rejected every shard record after the corpus's own last commit started shipping untruncated names up to 320 chars — the Atlas silently never progressed past 0% loading. Raised the cap to 512. Diagnosed with temporary logging (removed after).
+- **Cluster isolation made binary**: fragment shader now hard-hides (alpha 0) any point outside the active cluster that isn't an explicitly revealed relationship target, instead of merely dimming it; `pickProtein()` now rejects hover/click hits outside the active cluster; cluster labels for other clusters no longer render at all while inside one. Also found and fixed an unrelated real bug in the same code path: a JS-side `uDimNon` calculation was dimming a cluster's *own* members merely for being inside a cluster (unrelated to any actual selection), directly undermining "cluster proteins must remain fully coloured, well lit."
+- **Territory → Cluster** in every user-visible string (Depth Rail, cluster label chips, hints, Ask Atlas trace, copilot system instruction); the dead, permanently-disabled "Neighbourhood" Depth Rail row removed. Internal identifiers intentionally left unrenamed — see `DESIGN_DELTA.md` §12 for why.
+- **Deterministic selection centring**: `computeFramingTarget()` measures the identity panel's and any right-side panel's real DOM bounds every time (not hardcoded constants) and offsets the camera's look-at target so the protein renders in the true usable gap; re-applied on select, inspect, thread reveal, and window resize.
+- **Petri-dish light-mode contrast fixed** (old tint was nearly identical to the light fog background); dish now fades to near-invisible in Structure/Design and restores fully in Protein.
+- **Relationship threads**: extracted `computeThreadEndpoints()` as the single, tested source of truth for both endpoints (used by both rendering and tests); camera now fits the selection + all thread targets on reveal; colour is theme-aware; added an e2e test that projects every visible endpoint through the actual render camera and asserts sub-pixel agreement with the corresponding protein's own on-screen position — a hard correctness gate a screenshot can't prove.
+- **Query-match hit-testing**: discovered `pickProtein()` had no query-awareness at all — any point was clickable regardless of match status during an active query. Fixed with a match-filtered raycast and a generous, distance-scaled hit radius independent of the rendered point size. Verified with a live 240-match query and a 42-point grid sweep across the viewport (found and fixed one test-script bug along the way: an early grid sample was landing on the header's Home button, not the canvas).
+- **Light-mode vibrancy restored**: re-saturated/darkened `THEME_TABLE.light`'s family hues and reduced the light-mode fog fade (previous palette read as near-monochrome at Universe scale).
+- **Structure loading**: split `StructureView.tsx` into a download/parse effect and a representation-application effect so switching representation/colour-mode/ligands never redownloads, reparses, or remounts the Mol* plugin — closing a gap the prior session's own acceptance matrix had already flagged as unoptimized. Measured (not assumed) that this sandbox's headless browser cannot reach `models.rcsb.org`/`alphafold.ebi.ac.uk` at all (confirmed via timing, even through the same egress proxy `curl` succeeds through) — a sandbox-only limitation, documented as such rather than papered over.
+- **`CLOSE_PROTEIN`**: new command wired only to the identity panel's × button — fully clears Protein/Structure/Design/Sequence state in one step and returns to the cluster or Universe, preserving an active query (unlike the header's explicit Home reset). Back/Escape/Depth-Rail remain one-level-only, unchanged and re-verified.
+- **Onboarding built from scratch** (none existed on the PR #11 baseline): a quiet, 7-second-delayed, non-blocking invitation; a 7-step anchored coach-mark tour with live-tracked target rings; persistent decline/completion via `localStorage`; a permanent header GUIDE entry to replay it anytime.
+- **GPT-5.6 credentialing** verified already correct (server-side-only key, explicit local-command fallback message only on missing/failed key, zero `NEXT_PUBLIC_` exposure) and documented more explicitly in `README.md`.
+- Added 4 new Playwright e2e tests and 6 new unit tests; recorded every deliberate deviation in `docs/handoff/DESIGN_DELTA.md` (§12–20).
+
+**Files**
+- Added: `src/hooks/useOnboarding.ts`, `src/components/Onboarding.tsx`.
+- Modified: `src/domain/schemas.ts`, `src/domain/atlas.ts`, `src/domain/relationships.ts`, `src/domain/territories.ts` (unchanged, verified only), `src/components/WorldCanvas.tsx`, `src/components/AtlasExperience.tsx`, `src/components/DepthRail.tsx`, `src/components/Header.tsx`, `src/components/StructureView.tsx`, `src/engine/camera-navigation.ts`, `app/api/copilot/route.ts`, `app/globals.css`, `README.md`, `e2e/atlas.spec.ts`, `src/domain/atlas.test.ts`, `src/domain/relationships.test.ts`, `docs/handoff/DESIGN_DELTA.md`, `docs/handoff/CURRENT_STATE.md`, `docs/handoff/FINAL_ACCEPTANCE_MATRIX.md`.
+- Removed: None.
+
+**Validation**
+- `npm run typecheck`, `npm run lint`, `npm test` (32/32), `npm run build` — all pass.
+- `npm run test:e2e` — 11/11 pass (verified twice: once after finding a real bug via the new query-selectability test, once after fixing it — see `DESIGN_DELTA.md` §14–19 for the paired root-causes).
+- Manual scripted Playwright screenshot verification at 1920×1080, both themes: Universe, Cluster (isolated), Protein (centred, dish visible), Structure, and the full onboarding flow.
+
+**Git**
+- Branch: `claude/final-mvp-stabilization`.
+- Commit(s): pending at time of writing.
+- PR: none created this session (not requested).
+- Status: Ready to commit and push.
+
+**Codex**
+- Session ID: Pending (/feedback)
+
+**Next**
+Run the structure-loading representation-switch fix's real-network timing verification in an environment with unrestricted browser egress (this sandbox cannot reach RCSB/AlphaFold from the browser at all); consider a follow-up pass fully renaming the internal "territory" identifiers to "cluster" if a maintainer wants code-level consistency beyond the user-visible surface.
+
+---
+
+## 2026-07-21T09:50:00+00:00 - Live user-testing bugfix round 3: selection/query visual language, identity panel, navigation chrome, honest design-trajectory motion
+
+**Phase:** Bugfix / iteration on live user feedback
+
+**Objective**
+Address a large, detailed batch of follow-up feedback from live testing of round 2's build: 2 console bugs plus roughly 15 distinct design/interaction change requests spanning selection feedback, query interaction, territory-label legibility, relationship threads, the identity panel, dark-mode structure contrast, Depth Rail motion, the Design trajectory panel, and navigation chrome.
+
+**Completed**
+- Fixed an SSR/`localStorage` hydration mismatch (`useTheme`, `useSound`) and a raw-`<script>` React console warning (`app/layout.tsx` → `next/script`).
+- Removed the round-2 neighbourhood auto-label pool entirely — it directly conflicted with "no protein name unless hovering" and was the root cause of a reported label-clutter screenshot.
+- Replaced the bracket-marker selection indicator with a custom-shader billboarded "petri dish" (frosted, rim-lit, light-direction rotates with camera) and unified selection + query-match highlighting into one shader-driven mechanism (`aMatch`: grow + glow + pulse), fading everything else via `uDimNon`.
+- Removed the round-2 query grid/shell relocation layout entirely, per explicit rejection from the user — matches now highlight in place at their real positions; the camera reframes to a bounding sphere of those real positions instead.
+- Added pointer-priority for territory labels over protein-dot hover/click (real `getBoundingClientRect()` checks in the canvas pointer handlers) and a glass-backed pill treatment for label contrast.
+- Relationship threads: raised 3→5, fixed left-alignment (root cause: `<button>` defaults to `text-align:center`), unified to teal (removed the per-type color map), removed the large solid-color endpoint spheres (related proteins now keep normal point size, exempted from field fade via a new `aExempt` attribute).
+- Restructured the Identity panel into a fixed, non-scrolling header + scrollable body, added an explicit close button, and wired both the close button and a click-on-empty-space gesture to `RETURN_ONE_LEVEL`; panel now also renders during Inspect.
+- Made Mol* lighting theme-aware and boosted for dark mode; added an explicitly-labeled `ROTATE` camera-orbit toggle (not a fabricated dynamics simulation), auto-enabled during Design playback.
+- Added a tasteful glitch-style hover keyframe to the Depth Rail.
+- Added a real character-level sequence-diff comparison strip (two real ProteinMPNN candidates) and a `PROMPT THAT YIELDS THIS` line to the Design trajectory panel; improved the two evidence-gate beats to name a real documented artifact class that would fill each gap, without fabricating one. Deliberately skipped a 3D residue-level highlight — the candidate-sequence-to-`auth_seq_id` numbering correspondence was not verified this pass, and an incorrect highlight would be worse than an honest gap.
+- Added a top-left `‹ BACK` button, made the orbit/pan/zoom nav hint persistent (was hide-after-first-hover), and right-aligned the query bar + suggestion chips.
+- **Caught two regressions during this round's own validation, before they reached the user:** a real WebGL shader-precision mismatch on the newly-added `uTime` uniform (`highp` in vertex, `mediump` in fragment — fixed by an explicit `uniform highp float uTime;` in the fragment shader), and an accidental drop of the query-bar label-exclusion-zone logic from a prior round's fix (`DESIGN_DELTA.md` item 4) during the `WorldCanvas.tsx` rewrite — re-added and recomputed for the query bar's new right-anchored position. Both were root-caused with the same tools used in prior rounds (Playwright console-error capture and a direct `inputValue()`-before/after diagnostic script), not guessed at.
+- Recorded every deliberate deviation from the original design spec introduced this round in `docs/handoff/DESIGN_DELTA.md` (items 8–11), including one flagged for re-confirmation against the user's literal request (glass-backed labels vs. literal dynamic per-pixel text color).
+
+**Validation**
+- `npm run typecheck`, `npm run lint`, `npm test` (26/26) — pass.
+- `npm run build` — pass.
+- `npm run test:e2e` — **7/7 pass**, confirmed on a clean re-run after both regression fixes.
+- Manual scripted Playwright verification (screenshots) of: selection glow/pulse/petri-dish in both themes, in-place query highlighting, territory entry with legible glass-backed labels and a working `‹ BACK`, the identity panel's close-button return-one-level behavior, and the Depth Rail hover state.
+
+**Files**
+- Modified: `app/layout.tsx`, `app/globals.css`, `src/hooks/useTheme.ts`, `src/hooks/useSound.ts`, `src/components/WorldCanvas.tsx`, `src/components/IdentityPanel.tsx`, `src/components/AtlasExperience.tsx`, `src/components/Header.tsx`, `src/components/StructureView.tsx`, `src/components/InspectPanel.tsx`, `src/components/DesignPanel.tsx`, `docs/handoff/DESIGN_DELTA.md`, `docs/handoff/CURRENT_STATE.md`.
+
+**Git**
+- Branch: `claude/final-implementation`.
+- PR: #11 (draft, targeting `integration/claude-handoff`).
+
+**Codex**
+- Session ID: Pending (/feedback)
+
+**Next**
+Re-confirm the territory-label glass-backing substitution against the user's literal request. If pursued further: source a real RFdiffusion backbone trajectory and/or real AlphaFold2/ESMFold predictions for the two ProteinMPNN 6EHB candidates (with verified residue-numbering correspondence) to fully animate the Design trajectory panel.
+
+---
+
+## 2026-07-21T01:20:00+00:00 - Claude Design realized on the production engine (spatial hierarchy, all design-package components)
+
+**Phase:** Implementation
+
+**Objective**
+Make the exported Claude Design (`prototypes/claude-design-final/`, `docs/design/final/`) unmistakably real on top of the existing production engine (575,503-protein reviewed corpus, Mol*, SceneController, GPT-5.6 copilot), per `docs/handoff/CLAUDE_TAKEOVER_AUDIT.md`'s roadmap.
+
+**Completed**
+- Landed the full `DESIGN_TOKENS.md` token set as CSS custom properties (light flagship + dark "Specimen Chamber"), self-hosted Spectral + IBM Plex Mono via `next/font/google`, theme persistence, and the shared `.hx-glass` panel/scrim primitives. Fixed the pre-existing `eslint.config.mjs` gap that was linting the vendored `prototypes/**` reference bundle. Added a CI workflow gating PRs against `main`/`integration/claude-handoff`.
+- Rewrote the camera engine (`src/engine/camera-navigation.ts`) to the exact spherical `{target,r,theta,phi}` contract in `MOTION_AND_CAMERA_SPEC.md`: FOV 46°, `r` clamped [40,1700], `phi` clamped [0.14,3.0], a single `easeInOutCubic` curve, the full per-transition duration table, and an exact per-depth-level snapshot/restore stack.
+- Expanded `SceneMode`/`SceneCommand`/`SceneState` (`src/domain/atlas.ts`) to the design's 5-level hierarchy (`universe|territory|glance|inspect|design`), with `NAV_TO_LEVEL`/`RETURN_ONE_LEVEL` reproducing the prototype's exact per-level return rules. Rebuilt the copilot tool surface to 9 tools 1:1 with the new commands (`src/domain/copilot-tools.ts`).
+- Added `src/domain/territories.ts` (6 design-facing territories grouping the real 12-region annotation taxonomy, two regions per territory) so the universe ships the design's 6-hue palette without discarding real classification resolution.
+- Rewrote `WorldCanvas.tsx`: real 75,000-protein point field (no synthetic aggregate layer), territory ×1.7 expansion, `dimNon` dimming, idle-gated ambient drift, double-click focus, canvas-drawn bracket-marker selection, and camera choreography driven directly off `SceneState.lastCommand`.
+- Built every component in `docs/design/final/COMPONENT_INVENTORY.md`: `Header`, `DepthRail`, `QueryBar`, `IdentityPanel` (Glance/Learn tabs + relationship threads), `InspectPanel`, `DesignPanel`, `SequenceTray`, `AskAtlas` (⌘K-summonable, visible action trace, auto-dismiss), `LoadingScreen` (static logo, no spin).
+- Added `app/api/atlas/protein` + `useProteinDetail`: a real per-protein UniProt fetch (gene, function, subcellular location, disease, domains, canonical sequence) used by Glance/Learn/Sequence — fetched only for the selected protein, keeping the bulk 75k profile on its existing light field set.
+- Added `src/domain/relationships.ts`: relationship threads computed from real signals only (shared UniProt family annotation, or this codebase's own region classification), never an invented edge, with unit tests.
+- Extended `StructureView.tsx`: Spacefill representation, real chain-id/UniProt-domain-range color modes, and a Mol* click→sequence residue bridge (`plugin.behaviors.interaction.click`) for genuine bidirectional structure/sequence selection.
+- Implemented the protein-design journey as a continuous, six-beat, real-time spatial timeline (play/pause/scrub) rather than the design package's discrete stage clicks, per explicit instruction for this pass; beats without a real artifact (backbone generation, predicted fold/metrics) render as honest evidence gates.
+- Added a sound system (`src/hooks/useSound.ts`) matching `SOUND_SPEC.md`'s cue table/envelope, persisted, off by default.
+- Removed the Codex-era cold-open landing screen and its dead fixture module (`src/domain/fixtures.ts`) — the design has no such screen.
+- Found and fixed two real bugs via a Playwright smoke pass against the production build: an undeclared `color` attribute in the point-field vertex shader, and a text-selection regression from drag-orbiting over UI chrome.
+
+**Validation**
+- `npm run typecheck`, `npm run lint`, `npm test` (26 tests / 4 files), `npm run build` — all pass.
+- Playwright smoke pass against `npm run start`: Universe renders the real point field in both themes; simulated territory-label click verified expansion/dim/camera-reframe/rail-update; theme toggle verified; zero browser console errors after the shader fix.
+- Full detail, known gaps, and the exact next task are in `docs/handoff/CURRENT_STATE.md`. Deliberate deviations from the design package are recorded in `docs/handoff/DESIGN_DELTA.md`.
+
+**Git**
+- Branch: `claude/final-implementation` (from `integration/claude-handoff`).
+- Commits: `91ddef3` (design-token foundation), `f63ed85` (spatial hierarchy + all design-package components).
+- PR: #11, draft, targeting `integration/claude-handoff`.
+
+**Codex**
+- Session ID: Pending (/feedback)
+
+**Next**
+Playwright E2E suite for the core navigation loop, screenshot-based visual regression tests, multi-breakpoint manual QA, re-verify `docs/handoff/FINAL_ACCEPTANCE_MATRIX.md` row-by-row against the shipped build, and a credentialed Ask Atlas smoke test if `OPENAI_API_KEY` is available.
+
+---
+
+## 2026-07-21T01:45:00+00:00 - Playwright E2E suite, a real Ask Atlas bug found and fixed
+
+**Phase:** Validation
+
+**Objective**
+Add durable end-to-end test coverage for the core navigation loop and re-verify `docs/handoff/FINAL_ACCEPTANCE_MATRIX.md` against the shipped build.
+
+**Completed**
+- Added `e2e/atlas.spec.ts` + `playwright.config.ts` (pre-installed headless Chromium, generous timeouts to accommodate real UniProt shard loading in this environment): loading→Universe arrival, zero-console-error arrival, theme persistence across reload, territory entry, deterministic query, Ask Atlas ⌘K/Ctrl+K summon+dismiss, sound-preference persistence.
+- The suite caught a real bug on its first run: `AtlasExperience` passed `!loaderVisible && !commandOpen` as `AskAtlas`'s `visible` prop. Since `AskAtlas` returned `null` whenever `!visible`, opening the command panel (`commandOpen: true`) immediately unmounted the entire component — including the command panel it had just opened — making ⌘K appear to do nothing. Fixed: `visible` now only reflects loading state; the summon button alone hides while the panel is open.
+- Diagnosed the failure methodically before patching: verified via a raw CDP keyboard dispatch and a synthetic `window.dispatchEvent` that the keydown handler itself fired correctly with the right modifiers, which isolated the bug to the render-visibility gate rather than event handling.
+- Added `vitest.config.ts` excluding `e2e/**`, since Vitest's default include glob was also picking up the Playwright spec file and failing on `test.describe`.
+- Removed two small leftovers found while landing the above: a dead no-op hidden `<form>` in `AtlasExperience.tsx`, and an orphaned CSS class reference in `DesignPanel.tsx`.
+- Re-verified `docs/handoff/FINAL_ACCEPTANCE_MATRIX.md`'s Ask Atlas and Light+dark-parity rows against the now-passing suite.
+
+**Validation**
+- `npm run typecheck`, `npm run lint`, `npm test` (26 tests / 4 files) — pass.
+- `npm run test:e2e` — **7/7 pass** (`e2e/atlas.spec.ts`), ~4.4 minutes total against the real production build with real UniProt data loading.
+- `npm run build` — pass.
+
+**Git**
+- Branch: `claude/final-implementation`.
+- Commits: `e30b235` (E2E suite + Ask Atlas fix), plus the doc updates in this entry.
+- PR: #11, draft, targeting `integration/claude-handoff`.
+
+**Codex**
+- Session ID: Pending (/feedback)
+
+**Next**
+See `docs/handoff/CURRENT_STATE.md` "Exact next task" — reduced-motion/wider-breakpoint automated coverage, a credentialed Ask Atlas run if `OPENAI_API_KEY` becomes available, and the territory-label-overlap polish item in `DESIGN_DELTA.md`.
+
+---
+
+## 2026-07-21T06:45:00+00:00 - Live user-testing bugfix round: 12 real defects root-caused and fixed
+
+**Phase:** Validation / hardening, driven by direct human testing of the shipped build
+
+**Objective**
+The user ran the actual production build (not just this session's automated checks) and reported a concrete list of defects. Root-cause and fix every one — no cosmetic patches over unfixed root causes.
+
+**Completed**
+- **Mol* infinite reinit loop → the session's most severe bug.** `structureDomains` in `AtlasExperience.tsx` was recomputed via `.map()` on every render, giving it a new array reference roughly once a second (driven by the FPS-counter callback). `StructureView`'s Mol* mount `useEffect` depended on that array directly, so it fully tore down and rebuilt the entire Mol* plugin on that same ~1s cadence — the reported "screen keeps glitching," the flood of `Symbol 'ma.quality-assessment.pLDDT' already added` console warnings, and (very likely, given rapid WebGL-context churn) the reported "Universe goes blank after leaving a broken protein view" via concurrent-context exhaustion. Fixed with `useMemo` keyed on the (correctly stable) `detail` object.
+- **Universe "too dense and bunched into the center."** Diagnosed as a real scale mismatch, not a display bug: the real corpus's spatialization coordinates (`src/domain/spatialization.ts`) live within ~±100 world units, inherited from the pre-Claude-Design engine's `r ∈ [8,520]` camera clamp, while the design's camera contract (`MOTION_AND_CAMERA_SPEC.md`) uses much larger absolute distances tuned against the prototype's bigger synthetic dataset. Added `WORLD_SCALE = 6` + a `worldPosition()` helper (`src/domain/territories.ts`) applied at every point real protein/territory coordinates enter world space in `WorldCanvas.tsx`, and raised the default arrival framing from the spec's literal r:640 to r:900 to give the six genuinely-unevenly-sized real territories room to read as distinct. Recorded as `DESIGN_DELTA.md` item 6 — a deliberate, reasoned deviation, not an oversight.
+- **Dark-mode points blowing out to solid white.** 75,000 points at additive blending is far denser than the prototype's 13,400; added a dark-mode-only alpha damping term in the point fragment shader.
+- **Header logo "too small."** Root cause: an inline style was squashing the *combined* icon+wordmark lockup SVG to 20px tall, shrinking the icon glyph inside it far below its intended size. Copied the real wordmark PNGs out of the prototype's asset bundle (they existed but were never copied into `public/brand/logo/`) and rebuilt the header to show the icon-only mark at its correct 28px plus the real wordmark at 12px, closing the previously-accepted "combined lockup" deviation.
+- **Ask Atlas / query results "obscured by the rest of the proteins."** Two compounding bugs, both fixed: (a) the per-frame point-reflow lerp used a flat, frame-count-based factor instead of a `dt`-scaled one, so it converged far too slowly whenever the actual frame rate dropped — a genuine, independently-real robustness bug, not just a symptom of this sandbox's software renderer; (b) `applyQueryLayout` barely relocated matched points at all. Rewrote it so matches resolve onto a compact, individually-legible grid directly in front of the query-framing camera while non-matches are pushed onto a distant shell — verified via before/after screenshot that 240 real query matches are now clearly legible and separated from dimmed, receded non-matches.
+- **Relationship threads had no 3D visualization at all** — only `IdentityPanel`'s text list existed; `WorldCanvas.tsx` never drew the curved connecting lines the design specifies. Added a `threadGroup` using the same real `computeRelationshipThreads()` signal the panel already calls, drawing colored curved lines + endpoint dots from the selection marker to each related protein's real position. Verified visually with a real selected protein (ALOX15/P39654) showing 3 real "Shared classification" threads.
+- **"Neighbourhood level is useless."** Per the design, Neighbourhood is correctly not a separate navigable `SceneMode` (confirmed: the Depth Rail's Neighbourhood entry is deliberately inert by design) — but production had nothing filling the *interaction* the design specifies for it ("local groups/hero labels resolve into view as camera moves"). Added a pooled, throttled nearest-protein label system inside Territory mode; verified two real protein name labels resolving into view after entering a territory.
+- **Persistent ambient sound (new capability, explicit user request).** `SOUND_SPEC.md` explicitly forbids ambience. The user directly asked for an ambient option during live testing. Added a second, independent, off-by-default `AMBIENT` toggle (a very quiet generative two-oscillator drone, `src/hooks/useSound.ts`) alongside the untouched discrete cue-sound toggle. Recorded as `DESIGN_DELTA.md` item 7 — the reconciliation rule defers to a direct, live human instruction over the written spec here.
+- **Protein-design journey undiscoverable.** Only UniProt A5F934/PDB 6EHB carries a real precomputed design trajectory; nothing pointed a user toward it. Added a "protein design example" Query-bar suggestion chip that searches the exact accession. Verified the entire path end-to-end: search → select → Glance → Inspect → Design panel showing real 6EHB provenance and the continuous 6-beat playback.
+- Updated the `CameraEngine` unit test asserting the old literal r:640 home framing to the new, intentional r:900.
+
+**Diagnostic method, not guessing**
+Every fix above was root-caused before being patched — e.g. the "3 FPS" reading during investigation was confirmed via `WEBGL_debug_renderer_info` to be this sandbox's software (SwiftShader) WebGL rasterizer, not a code regression, so no code was changed purely to move that number; the reflow-timing fix was made because a flat per-frame factor is independently a real bug on any slow frame rate, which happened to also be what made the diagnosis legible in this environment.
+
+**Validation**
+- `npm run typecheck`, `npm run lint`, `npm test` (26/26, including the updated camera home-framing test) — pass.
+- `npm run build` — pass.
+- `npm run test:e2e` — 7/7 Playwright tests pass against the rebuilt production build.
+- Scripted Playwright verification (screenshotted) of all 10 fixes above at 1920×1080, both themes: Universe arrival composition, territory entry + neighbourhood labels, dark-mode point rendering, query legibility, thread-line rendering with a real protein, and the full design-journey path.
+
+**Git**
+- Branch: `claude/final-implementation`.
+- PR: #11, draft, targeting `integration/claude-handoff`.
+
+**Codex**
+- Session ID: Pending (/feedback)
+
+**Next**
+See `docs/handoff/CURRENT_STATE.md` "Exact next task" — automated reduced-motion/2560×1440 e2e coverage, a credentialed Ask Atlas run if `OPENAI_API_KEY` becomes available, and a screen-space label-collision pass for the remaining `DESIGN_DELTA.md` item 3.
+
+---
+
+## 2026-07-21T07:00:00+00:00 - Follow-up: territory label vs. query bar collision, e2e fully green
+
+**Phase:** Validation, direct follow-up to the previous entry
+
+**Objective**
+The prior bugfix commit's pointer-events fix wasn't sufficient — the e2e suite's territory-entry test still failed on re-run. Root-cause precisely rather than re-guessing.
+
+**Completed**
+- Used `page.evaluate(() => document.elementFromPoint(x, y))` at the exact center of the territory label's bounding box to find out, with certainty, what the browser itself considered the topmost element there. Result: a real `.hx-suggestion-chip` button ("membrane receptors"), not empty flex-gap space — meaning the previous commit's pointer-events fix (which only addressed dead space) was solving a different, smaller problem than the one actually causing the test to fail.
+- Fixed properly: `projectLabels()` now computes the query bar's known screen-space rectangle each frame and nudges a territory label below it if their positions would coincide, rather than trying to win a z-order fight between two legitimately-interactive elements.
+- Verified the fix directly (not by assumption) with the same `elementFromPoint` diagnostic: the label's projected position moved from y:138 (inside the chip row) to y:230 (below it), and `elementFromPoint` at the new position correctly resolves to the label's own `.hx-label-name` div.
+- Also diagnosed and worked around an unrelated environment issue during this pass: a stray `next-server` process from an earlier manual test survived process kills targeted by name pattern and caused a completely unrelated catastrophic e2e failure (`.hx-loading` never appearing at all) on one intermediate run. Confirmed via `ps`/`ss` that killing it and restarting cleanly (using the harness's `run_in_background` rather than manual `nohup &`/`disown`, which was silently failing to launch in this sandbox) resolved it — not a code issue, but worth noting for future sessions in this environment.
+
+**Validation**
+- `npm run typecheck`, `npm run lint`, `npm test` (26/26) — pass.
+- `npm run test:e2e` — **7/7 pass**, confirmed clean (4.3 minutes, all green, including the previously-flaky territory-entry test).
+
+**Git**
+- Branch: `claude/final-implementation`.
+- Commits: `988ad92` (bugfix round), `06f79e1` (this fix).
+- PR: #11, draft, targeting `integration/claude-handoff`.
+
+**Codex**
+- Session ID: Pending (/feedback)
+
+**Next**
+Same as the prior entry: automated reduced-motion/2560×1440 e2e coverage, a credentialed Ask Atlas run if `OPENAI_API_KEY` becomes available, and a *territory-vs-territory* (not territory-vs-query-bar, now fixed) label-collision pass.
+
+---
+
 ## 2026-07-20T00:00:00+01:00 - Design trajectory reveal
 
 **Phase:** Implementation
@@ -21,6 +253,8 @@ Turn the attributable 6EHB ProteinMPNN artifact into an interruptible cinematic 
 
 **Next**
 Run the full validation suite and production browser QA at 1440x900.
+
+**Superseded (2026-07-21):** the discrete stage/HUD/`design_binder` design from this entry was fully replaced by a continuous, on-screen, in-flight spatial sequence (`DesignState.progress`, `SEEK_DESIGN`/`SET_DESIGN_PLAYBACK`/`START_DESIGN`) per direct user instruction — see `docs/handoff/DESIGN_DELTA.md` §1. None of the commands, tools, or CSS listed above exist on `main` as of the 2026-07-21T17:15:00+00:00 entry above.
 
 ## 2026-07-20T05:40:00+01:00 - Functional-completion closeout
 

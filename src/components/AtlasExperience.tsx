@@ -1,163 +1,210 @@
 "use client";
 
-import Image from "next/image";
 import dynamic from "next/dynamic";
-import { type FormEvent, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { initialSceneState, reduceScene, type SceneCommand } from "@/domain/atlas";
 import { copilotStreamEventSchema, sceneCommandSchema } from "@/domain/schemas";
-import { parseCopilotToolCall } from "@/domain/copilot-tools";
-import type { AtlasCluster, AtlasProtein, AtlasSearchResult, CameraContext } from "@/domain/atlas-data";
-import type { CopilotToolCall } from "@/domain/copilot-tools";
+import { parseCopilotToolCall, type CopilotToolCall } from "@/domain/copilot-tools";
+import { territories } from "@/domain/territories";
+import { domainColorHex } from "@/domain/domain-colors";
+import type { AtlasProtein, AtlasSearchResult } from "@/domain/atlas-data";
 import { useProteinAtlas } from "@/hooks/useProteinAtlas";
 import { useStructureConfidence } from "@/hooks/useStructureConfidence";
-import { useDesignTrajectory } from "@/hooks/useDesignTrajectory";
 import { useStructureMetadata } from "@/hooks/useStructureMetadata";
-import { WorldCanvas } from "./WorldCanvas";
+import { useDesignTrajectory } from "@/hooks/useDesignTrajectory";
+import { useProteinDetail } from "@/hooks/useProteinDetail";
+import { useTheme } from "@/hooks/useTheme";
+import { useSound } from "@/hooks/useSound";
+import { useOnboarding } from "@/hooks/useOnboarding";
+import { WorldCanvas, type WorldMetrics } from "./WorldCanvas";
+import { Header } from "./Header";
+import { DepthRail } from "./DepthRail";
+import { QueryBar } from "./QueryBar";
+import { IdentityPanel } from "./IdentityPanel";
+import { InspectPanel } from "./InspectPanel";
+import { DesignPanel } from "./DesignPanel";
+import { SequenceTray } from "./SequenceTray";
+import { AskAtlas } from "./AskAtlas";
+import { LoadingScreen } from "./LoadingScreen";
+import { OnboardingInvitation, OnboardingGuide } from "./Onboarding";
 
 const StructureView = dynamic(() => import("./StructureView").then((module) => module.StructureView), { ssr: false });
 
-type Message = { role: "atlas" | "you"; text: string };
 type CopilotStreamEvent = { type: "meta"; source: string } | { type: "text_delta"; delta: string } | { type: "tool_call"; call: CopilotToolCall } | { type: "error"; message: string; retryable: boolean } | { type: "done" };
-type WorldMetrics = { fps: number; visibleEntities: number; cameraDistance: number; heapMb: number | null };
-
-const initialMetrics: WorldMetrics = { fps: 0, visibleEntities: 0, cameraDistance: 0, heapMb: null };
+type AtlasAnswer = { text: string; trace: string[] };
+const DESIGN_DURATION_MS = 32_000;
 
 export function AtlasExperience() {
   const [state, dispatch] = useReducer(reduceScene, initialSceneState);
-  const [minimumLoadComplete, setMinimumLoadComplete] = useState(false);
-  const [prompt, setPrompt] = useState("");
+  const { theme, toggleTheme } = useTheme();
+  const sound = useSound();
+  const atlas = useProteinAtlas(true);
+
   const [query, setQuery] = useState("");
   const [queryResults, setQueryResults] = useState<AtlasSearchResult[]>([]);
-  const [querying, setQuerying] = useState(false);
-  const [hoveredProtein, setHoveredProtein] = useState<AtlasProtein | null>(null);
-  const [focusedCluster, setFocusedCluster] = useState<AtlasCluster | null>(null);
-  const [metrics, setMetrics] = useState<WorldMetrics>(initialMetrics);
-  const [messages, setMessages] = useState<Message[]>([{ role: "atlas", text: "Ask for a protein, organism, family, or function. I will move the universe, not just return text." }]);
+  const [worldMetrics, setWorldMetrics] = useState<WorldMetrics>({ fps: 0, visibleCount: 0 });
+  const [commandOpen, setCommandOpen] = useState(false);
+  const [command, setCommand] = useState("");
+  const [answer, setAnswer] = useState<AtlasAnswer | null>(null);
+  const [copilotBusy, setCopilotBusy] = useState(false);
   const [commandError, setCommandError] = useState<string | null>(null);
   const [structureStatus, setStructureStatus] = useState<"loading" | "ready" | "unavailable">("loading");
-  const [copilotBusy, setCopilotBusy] = useState(false);
+  const [autoRotate, setAutoRotate] = useState(false);
   const copilotRequest = useRef<AbortController | null>(null);
-  const entered = state.mode !== "landing";
-  const atlas = useProteinAtlas(entered);
+  const answerTimer = useRef<number | null>(null);
+  const designProgressRef = useRef(0);
+
   const selectedProtein = state.selectedProteinId ? atlas.recordById.get(state.selectedProteinId) ?? null : null;
   const confidence = useStructureConfidence(selectedProtein?.structure ?? null);
   const structureMetadata = useStructureMetadata(selectedProtein?.structure ?? null);
   const design = useDesignTrajectory(selectedProtein?.id === "A5F934");
-  const designStageCount = design.status === "available" ? design.data.stages.length : 0;
+  const detail = useProteinDetail(selectedProtein?.id ?? null);
 
-  const issue = (command: SceneCommand) => {
-    const parsed = sceneCommandSchema.safeParse(command);
+  const issue = useCallback((commandToIssue: SceneCommand) => {
+    const parsed = sceneCommandSchema.safeParse(commandToIssue);
     if (!parsed.success) { setCommandError("A scene command was rejected before it could change the scientific view."); return false; }
-    setCommandError(null); dispatch(parsed.data as SceneCommand); return true;
-  };
-  const launchDesign = () => issue({ type: "START_DESIGN_JOURNEY", trajectoryId: "proteinmpnn-6ehb-example-6", specification: "Official precomputed 6EHB sequence redesign" });
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => setMinimumLoadComplete(true), 2100);
-    return () => window.clearTimeout(timer);
+    setCommandError(null);
+    dispatch(parsed.data as SceneCommand);
+    return true;
   }, []);
 
-  useEffect(() => {
-    if (state.mode !== "diving") return;
-    const timer = window.setTimeout(() => issue({ type: "COLOR_BY", scheme: "confidence" }), 1180);
-    return () => window.clearTimeout(timer);
-  }, [state.mode]);
+  // ---- loading ----
+  const loaderVisible = !atlas.manifest || atlas.progress < 1;
+  const stageLabel = !atlas.manifest ? "OPENING THE BIOLOGICAL INDEX" : atlas.progress < 1 ? "SPATIALIZING PROTEIN FAMILIES" : "ATLAS READY";
 
-  useEffect(() => {
-    if (state.mode !== "designing" || state.designPlayback !== "playing" || designStageCount === 0) return;
-    const lastStage = designStageCount - 1;
-    const timer = window.setInterval(() => {
-      if (state.designStageIndex >= lastStage) issue({ type: "PAUSE_DESIGN_TRAJECTORY" });
-      else issue({ type: "STEP_DESIGN_STAGE", direction: "forward" });
-    }, 2400);
-    return () => window.clearInterval(timer);
-  }, [state.mode, state.designPlayback, state.designStageIndex, designStageCount]);
+  // ---- onboarding: optional, contextual, never a blocking modal on arrival ----
+  const onboarding = useOnboarding(!loaderVisible);
 
-  const runQuery = async (value: string) => {
+  // ---- query ----
+  const runQuery = useCallback(async (value: string) => {
     const nextQuery = value.trim();
-    if (!nextQuery) {
-      setQuery("");
-      setQueryResults([]);
-      issue({ type: "CLEAR_QUERY" });
-      return [];
-    }
+    setCommandOpen(false);
+    if (!nextQuery) { setQuery(""); setQueryResults([]); issue({ type: "CLEAR_QUERY" }); return; }
     setQuery(nextQuery);
-    setQuerying(true);
-    try {
-      const results = await atlas.search(nextQuery);
-      setQueryResults(results);
-      issue({ type: "QUERY_ATLAS", query: nextQuery, resultIds: results.map((result) => result.protein.id) });
-      return results;
-    } finally { setQuerying(false); }
-  };
+    const results = await atlas.search(nextQuery);
+    setQueryResults(results);
+    issue({ type: "QUERY_ATLAS", query: nextQuery, resultIds: results.map((result) => result.protein.id) });
+    sound.play(results.length ? "query" : "deny");
+    onboarding.markInteracted();
+  }, [atlas, issue, sound, onboarding]);
 
-  const submitQuery = (event: FormEvent) => {
-    event.preventDefault();
-    void runQuery(query);
-  };
+  const clearQuery = useCallback(() => { setQuery(""); setQueryResults([]); issue({ type: "CLEAR_QUERY" }); }, [issue]);
 
-  const selectProtein = (protein: AtlasProtein, context?: CameraContext) => {
-    if (context) issue({ type: "SET_CAMERA_CONTEXT", context });
-    issue({ type: "FLY_TO_PROTEIN", proteinId: protein.id });
-    setHoveredProtein(null);
-  };
+  const dominantTerritoryLabel = useMemo(() => {
+    if (!queryResults.length) return null;
+    const counts = new Map<string, number>();
+    for (const result of queryResults) counts.set(result.protein.region, (counts.get(result.protein.region) ?? 0) + 1);
+    const topRegion = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+    const territory = territories.find((candidate) => candidate.regions.includes(topRegion as never));
+    return territory?.label ?? "Mixed territories";
+  }, [queryResults]);
 
-  const focusCluster = (cluster: AtlasCluster) => {
-    setFocusedCluster(cluster);
-    issue({ type: "FOCUS_REGION", regionId: cluster.region });
-    void atlas.ensureShard(cluster.shard.toString(16).padStart(2, "0"));
-  };
+  // ---- selection / navigation ----
+  const selectProtein = useCallback((protein: AtlasProtein) => { issue({ type: "SELECT_PROTEIN", proteinId: protein.id }); sound.play("select"); onboarding.markInteracted(); }, [issue, sound, onboarding]);
+  const enterTerritory = useCallback((territoryId: string) => { issue({ type: "ENTER_TERRITORY", territoryId }); sound.play("enter"); onboarding.markInteracted(); }, [issue, sound, onboarding]);
+  const navigateLevel = useCallback((level: "universe" | "territory" | "protein" | "structure") => { issue({ type: "NAV_TO_LEVEL", level }); sound.play("back"); }, [issue, sound]);
+  const returnHome = useCallback(() => { issue({ type: "RETURN_TO_UNIVERSE" }); clearQuery(); sound.play("back"); }, [issue, clearQuery, sound]);
+  const inspectStructure = useCallback(() => { issue({ type: "INSPECT_STRUCTURE" }); sound.play("enter"); }, [issue, sound]);
+  const startDesign = useCallback(() => { issue({ type: "START_DESIGN", trajectoryId: "proteinmpnn-6ehb-example-6", specification: "Redesign the sequence of the 6EHB outer-membrane-protein-U homotrimer with ProteinMPNN, tying equivalent positions across chains A, B, and C at sampling temperature 0.2." }); sound.play("enter"); }, [issue, sound]);
+  const returnOneLevel = useCallback(() => { issue({ type: "RETURN_ONE_LEVEL" }); sound.play("back"); }, [issue, sound]);
+  // Only the identity panel's own close button fully clears the Protein state in one
+  // step (cluster/universe, whichever the selection came from) — Back/Escape/Depth-Rail
+  // all perform a one-level return instead. See docs/handoff/DESIGN_DELTA.md.
+  const closeProtein = useCallback(() => { issue({ type: "CLOSE_PROTEIN" }); sound.play("back"); }, [issue, sound]);
 
-  const applyTool = async (tool: CopilotToolCall) => {
-    if (tool.name === "query_atlas") await runQuery(tool.arguments.query ?? "");
-    if (tool.name === "focus_region") issue({ type: "FOCUS_REGION", regionId: tool.arguments.region_id });
-    if (tool.name === "color_by") issue({ type: "COLOR_BY", scheme: (tool.arguments.scheme as "confidence" | "trusted_core" | "hydrophobicity") ?? "confidence" });
-    if (tool.name === "start_design_journey") {
-      if (selectedProtein?.id !== "A5F934") throw new Error("The verified design journey requires selected target A5F934 / 6EHB.");
-      launchDesign();
-    }
-    if (tool.name === "design_binder") {
-      if (selectedProtein?.id !== "A5F934") throw new Error("This evidence-backed design path is only available for target A5F934 / 6EHB.");
-      launchDesign();
-    }
-    if (tool.name === "play_design_trajectory") { if (state.mode !== "designing") throw new Error("No design trajectory is active."); issue({ type: "PLAY_DESIGN_TRAJECTORY" }); }
-    if (tool.name === "pause_design_trajectory") issue({ type: "PAUSE_DESIGN_TRAJECTORY" });
-    if (tool.name === "set_design_stage") {
-      if (state.mode !== "designing") throw new Error("No design journey is active.");
-      issue({ type: "SET_DESIGN_STAGE", stageIndex: tool.arguments.stage_index });
-    }
-    if (tool.name === "select_design_candidate") {
-      if (state.mode !== "designing") throw new Error("No design journey is active.");
-      issue({ type: "SELECT_DESIGN_CANDIDATE", candidateId: tool.arguments.candidate_id });
-    }
-    if (tool.name === "compare_design_candidates") {
-      if (state.mode !== "designing" && state.mode !== "comparison") throw new Error("No design trajectory is active.");
-      issue({ type: "COMPARE_DESIGN_CANDIDATES", candidateIds: tool.arguments.candidate_ids });
-    }
-    if (tool.name === "return_to_design_target") issue({ type: "SET_DESIGN_STAGE", stageIndex: state.designStageIndex });
-    if (tool.name === "focus_confidence_range") {
-      if (confidence.status !== "available") throw new Error("Verified confidence is unavailable for this structure.");
-      const ranges = tool.arguments.band === "very_high" ? confidence.data.ranges.veryHigh : tool.arguments.band === "confident" ? confidence.data.ranges.confident : tool.arguments.band === "low" ? confidence.data.ranges.low : confidence.data.ranges.veryLow;
-      const range = ranges[0]; if (!range) throw new Error(`No ${tool.arguments.band.replace("_", " ")} confidence range exists.`);
-      issue({ type: "COLOR_BY", scheme: "trusted_core" }); issue({ type: "FOCUS_RESIDUES", start: range[0], end: range[1], requestId: Date.now() });
-    }
-    if (tool.name === "fly_to_protein") {
-      const protein = atlas.recordById.get(tool.arguments.protein_id ?? "");
-      if (protein) selectProtein(protein);
-    }
-    if (tool.name === "return_to_universe") issue({ type: "RETURN_TO_UNIVERSE" });
-  };
+  // ---- global keyboard: Esc returns one level / closes overlays, Cmd+K summons Ask Atlas ----
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const activeElement = document.activeElement as HTMLElement | null;
+      const isTyping = activeElement?.matches("input,textarea,[contenteditable=true]");
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setCommandOpen((open) => !open);
+        return;
+      }
+      if (event.key !== "Escape") return;
+      if (isTyping) { activeElement?.blur(); return; }
+      if (commandOpen) { setCommandOpen(false); return; }
+      if (state.seqOpen) { issue({ type: "CLOSE_SEQUENCE" }); return; }
+      if (state.mode !== "universe") { issue({ type: "RETURN_ONE_LEVEL" }); sound.play("back"); return; }
+      if (query) clearQuery();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [commandOpen, state.seqOpen, state.mode, query, issue, clearQuery, sound]);
 
-  const ask = async (event: FormEvent) => {
-    event.preventDefault();
-    const question = prompt.trim();
+  // ---- continuous design playback ----
+  useEffect(() => { designProgressRef.current = state.design?.progress ?? 0; }, [state.design?.progress]);
+  useEffect(() => {
+    if (!state.design || state.design.playback !== "playing") return;
+    let frame = 0; let last = performance.now();
+    const tick = (now: number) => {
+      const dt = now - last; last = now;
+      const next = Math.min(1, designProgressRef.current + dt / DESIGN_DURATION_MS);
+      designProgressRef.current = next;
+      issue({ type: "SEEK_DESIGN", progress: next });
+      if (next >= 1) { issue({ type: "SET_DESIGN_PLAYBACK", playback: "paused" }); return; }
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+    // state.design.progress is intentionally excluded: designProgressRef carries it so the
+    // rAF loop isn't restarted on every frame's own progress update.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.design?.playback, state.design?.trajectoryId, issue]);
+
+  const onDesignPlayPause = useCallback(() => {
+    if (!state.design) return;
+    if (state.design.progress >= 1) { designProgressRef.current = 0; issue({ type: "SEEK_DESIGN", progress: 0 }); issue({ type: "SET_DESIGN_PLAYBACK", playback: "playing" }); return; }
+    issue({ type: "SET_DESIGN_PLAYBACK", playback: state.design.playback === "playing" ? "paused" : "playing" });
+  }, [state.design, issue]);
+
+  // ---- Ask Atlas / GPT-5.6 copilot ----
+  const applyTool = useCallback(async (tool: CopilotToolCall): Promise<string[]> => {
+    switch (tool.name) {
+      case "query_atlas": await runQuery(tool.arguments.query); return [`scene.filter("${tool.arguments.query}")`];
+      case "focus_territory": enterTerritory(tool.arguments.territory_id); return [`scene.focusCluster(${tool.arguments.territory_id})`];
+      case "select_protein": {
+        const protein = atlas.recordById.get(tool.arguments.protein_id);
+        if (!protein) throw new Error(`${tool.arguments.protein_id} is not present in scene context.`);
+        selectProtein(protein);
+        return [`scene.select(${protein.id})`];
+      }
+      case "inspect_structure":
+        if (state.mode !== "glance") throw new Error("Select a protein first.");
+        inspectStructure();
+        return ["structure.resolve()"];
+      case "set_confidence_xray":
+        if (confidence.status !== "available") throw new Error("Verified confidence is unavailable for this structure.");
+        issue({ type: "SET_CONFIDENCE_XRAY", visible: tool.arguments.visible });
+        return [`structure.setColoring(${tool.arguments.visible ? "plddt" : "default"})`];
+      case "reveal_threads":
+        if (state.threadsOn !== tool.arguments.visible) issue({ type: "TOGGLE_THREADS" });
+        return [`graph.relations(${selectedProtein?.id ?? "?"})`];
+      case "focus_residues":
+        if (state.mode !== "inspect") throw new Error("Inspect a structure first.");
+        issue({ type: "FOCUS_RESIDUES", start: tool.arguments.start, end: tool.arguments.end, chain: tool.arguments.chain, requestId: Date.now() });
+        return [`structure.highlightResidues(${tool.arguments.start}, ${tool.arguments.end})`];
+      case "start_design":
+        if (selectedProtein?.id !== "A5F934") throw new Error("The verified design journey requires selected target A5F934 / 6EHB.");
+        startDesign();
+        return ["scene.startDesign()"];
+      case "return_to_universe":
+        returnHome();
+        return ["scene.returnToUniverse()"];
+    }
+  }, [runQuery, enterTerritory, atlas.recordById, selectProtein, state.mode, state.threadsOn, inspectStructure, confidence.status, issue, selectedProtein, startDesign, returnHome]);
+
+  const submitCommand = useCallback(async (value: string) => {
+    const question = value.trim();
     if (!question) return;
-    setPrompt("");
-    setMessages((current) => [...current, { role: "you", text: question }]);
+    setCommand("");
+    setCommandOpen(false);
     copilotRequest.current?.abort();
     const controller = new AbortController();
     copilotRequest.current = controller;
     setCopilotBusy(true);
+    if (answerTimer.current) window.clearTimeout(answerTimer.current);
     try {
       const response = await fetch("/api/copilot", {
         method: "POST",
@@ -166,186 +213,235 @@ export function AtlasExperience() {
         body: JSON.stringify({
           message: question,
           scene: {
-            mode: state.mode,
-            query: state.query,
-            indexedProteins: atlas.indexedCount,
-            camera: state.cameraContext,
-            representation: state.structureRepresentation,
-            ligandsVisible: state.ligandsVisible,
-            residueFocus: state.residueFocus,
+            mode: state.mode, territoryId: state.territoryId, query: state.query, indexedProteins: atlas.indexedCount,
+            representation: state.structureRepresentation, ligandsVisible: state.ligandsVisible,
+            confidenceXray: state.confidenceXray, threadsOn: state.threadsOn, residueFocus: state.residueFocus,
           },
           protein: selectedProtein,
           confidence: confidence.status === "available" ? { status: "available", metric: confidence.data.metric, mean: confidence.data.mean, lowConfidenceRanges: confidence.data.ranges.veryLow } : { status: confidence.status },
-          design: { status: design.status, trajectoryId: state.designTrajectoryId, stageIndex: state.designStageIndex },
+          design: state.design ? { status: design.status, trajectoryId: state.design.trajectoryId, progress: state.design.progress } : undefined,
         }),
       });
       if (!response.ok || !response.body) throw new Error(`Copilot unavailable (${response.status})`);
-      const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = ""; let messageIndex = -1;
-      setMessages((current) => { messageIndex = current.length; return [...current, { role: "atlas", text: "" }]; });
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let text = "";
+      const trace: string[] = [];
       while (true) {
-        const { done, value } = await reader.read(); if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n"); buffer = lines.pop() ?? "";
+        const { done, value: chunk } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(chunk, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
         for (const line of lines) {
           if (!line.trim()) continue;
           const parsedEvent = copilotStreamEventSchema.safeParse(JSON.parse(line));
           if (!parsedEvent.success) throw new Error("The reasoning channel returned an invalid event.");
           const streamed = parsedEvent.data as CopilotStreamEvent;
-          if (streamed.type === "text_delta") setMessages((current) => current.map((message, index) => index === messageIndex ? { ...message, text: message.text + streamed.delta } : message));
+          if (streamed.type === "text_delta") { text += streamed.delta; setAnswer({ text, trace: [...trace] }); }
           if (streamed.type === "tool_call") {
             const call = parseCopilotToolCall(streamed.call.name, streamed.call.arguments);
             if (!call) throw new Error("The reasoning channel proposed an invalid scene command.");
-            await applyTool(call);
+            try {
+              const traceLines = await applyTool(call);
+              trace.push(...traceLines);
+            } catch (toolError) {
+              trace.push(`scene.reject(${toolError instanceof Error ? toolError.message : "invalid action"})`);
+            }
+            setAnswer({ text, trace: [...trace] });
           }
-          if (streamed.type === "error") setMessages((current) => current.map((message, index) => index === messageIndex ? { ...message, text: message.text || streamed.message } : message));
+          if (streamed.type === "error") { text = text || streamed.message; setAnswer({ text, trace: [...trace] }); }
         }
       }
+      answerTimer.current = window.setTimeout(() => setAnswer(null), 9000);
     } catch (error) {
-      if (!controller.signal.aborted) setMessages((current) => [...current, { role: "atlas", text: error instanceof Error ? error.message : "The reasoning channel is unavailable. Direct spatial search remains active." }]);
+      if (!controller.signal.aborted) {
+        setAnswer({ text: error instanceof Error ? error.message : "The reasoning channel is unavailable. Direct spatial search remains active.", trace: [] });
+        answerTimer.current = window.setTimeout(() => setAnswer(null), 9000);
+      }
     } finally {
       if (copilotRequest.current === controller) copilotRequest.current = null;
       setCopilotBusy(false);
     }
-  };
+  }, [applyTool, atlas.indexedCount, confidence, design.status, selectedProtein, state]);
 
-  const universeMode = state.mode === "landing" || state.mode === "universe" || state.mode === "diving";
-  const structureMode = !universeMode;
-  const designMode = state.mode === "designing" || state.mode === "designComplete" || state.mode === "comparison";
-  const loaderVisible = !minimumLoadComplete || !atlas.manifest;
-  const coverageLabel = `${(atlas.addressableCount ?? atlas.manifest?.coverage.records ?? 0).toLocaleString()} reviewed proteins addressable · ${(atlas.manifest?.coverage.records ?? 0).toLocaleString()} staged locally`;
-  const highlightedIds = useMemo(() => state.queryResultIds, [state.queryResultIds]);
+  // ---- derived UI flags ----
+  const releaseLabel = atlas.manifest?.source.release && atlas.manifest.source.release !== "unknown" ? `UNIPROT ${atlas.manifest.source.release}` : "DEVELOPMENT INDEX";
+  const showQuery = !loaderVisible && (state.mode === "universe" || state.mode === "territory") && !commandOpen;
+  const territoryLabel = state.territoryId ? territories.find((t) => t.id === state.territoryId)?.label ?? null : null;
+  const canDesign = !!selectedProtein && selectedProtein.id === "A5F934";
+  // Memoized on `detail` (stable unless the resolved UniProt record actually changes) so this
+  // array keeps referential identity across unrelated re-renders (e.g. the once-a-second FPS
+  // counter update) — StructureView's Mol* mount effect depends on it, and an unstable
+  // reference here was re-mounting the entire Mol* plugin on every re-render.
+  const structureDomains = useMemo(
+    () => (detail.status === "available" ? detail.data.domains.map((domain, index) => ({ label: domain.label, start: domain.start, end: domain.end, color: domainColorHex(index) })) : []),
+    [detail],
+  );
+  const showAskAtlas = !loaderVisible;
+  const navHint = state.mode === "universe" ? "DRAG ORBIT · RIGHT/SHIFT-DRAG PAN · SCROLL ZOOM · DOUBLE-CLICK FOCUS" : "ESC RETURNS ONE LEVEL";
 
-  return <main className={`atlas mode-${state.mode}`}>
-    <WorldCanvas
-      mode={state.mode}
-      manifest={atlas.manifest}
-      proteins={atlas.records}
-      highlightedIds={highlightedIds}
-      selectedProteinId={state.selectedProteinId}
-      focusedRegionId={state.focusedRegionId}
-      restoreContext={state.cameraContext}
-      onSelectProtein={selectProtein}
-      onFocusCluster={focusCluster}
-      onHoverProtein={setHoveredProtein}
-      onMetrics={setMetrics}
-    />
-    <StructureView active={structureMode} structure={selectedProtein?.structure ?? null} confidenceActive={state.mode === "xray"} representation={state.structureRepresentation} showLigands={state.ligandsVisible} focusRange={state.residueFocus} retryKey={state.structureRetry} onStatusChange={setStructureStatus} />
-    <div className="atmosphere" />
+  const onSelectProteinFromWorld = useCallback((protein: AtlasProtein) => { selectProtein(protein); }, [selectProtein]);
 
-    <header className="masthead">
-      <Image src="/brand/logo/logo_full_white_svg.svg" alt="Helicase" width={246} height={48} priority />
-      <span>ATLAS / UNIVERSE</span>
-      <span className="live-dot">{atlas.manifest?.source.release === "unknown" ? "DEVELOPMENT INDEX" : `UNIPROT ${atlas.manifest?.source.release}`}</span>
-    </header>
+  return (
+    <main className="hx-app">
+      <WorldCanvas
+        theme={theme}
+        scene={state}
+        proteins={atlas.records}
+        onSelectProtein={onSelectProteinFromWorld}
+        onEnterTerritory={enterTerritory}
+        onHoverProtein={() => {}}
+        onMetrics={setWorldMetrics}
+        onDeselect={returnOneLevel}
+      />
 
-    <aside className="identity-rail">
-      <span>UNIVERSE</span><i className={universeMode ? "active" : ""} />
-      <span>STRUCTURE</span><i className={structureMode ? "active" : ""} />
-      <span>HYPOTHESIS</span><i className={designMode ? "active violet" : ""} />
-    </aside>
+      {(state.mode === "inspect" || state.mode === "design") && selectedProtein && (
+        <StructureView
+          active
+          structure={selectedProtein.structure}
+          confidenceActive={state.confidenceXray}
+          representation={state.structureRepresentation}
+          colorMode={state.structureColorMode}
+          domains={structureDomains}
+          showLigands={state.ligandsVisible}
+          focusRange={state.residueFocus}
+          retryKey={state.structureRetry}
+          onStatusChange={setStructureStatus}
+          onResiduePick={(residueNumber) => issue({ type: "SET_SEQUENCE_SELECTION", selection: { start: residueNumber - 1, end: residueNumber - 1 } })}
+          theme={theme}
+          autoRotate={autoRotate || state.mode === "design"}
+        />
+      )}
 
-    {state.mode === "landing" && <section className="cold-open">
-      <p className="eyebrow">A SPATIAL INDEX OF PROTEIN LIFE</p>
-      <h1>Enter the<br /><em>protein universe.</em></h1>
-      <p className="lede">Functions gather into regions. Families become neighbourhoods. Every illuminated address resolves to a sourced protein record.</p>
-      <button className="primary" onClick={() => issue({ type: "ENTER_ATLAS" })}><span>Cross the threshold</span><b>↘</b></button>
-      <div className="map-stats"><span>{coverageLabel}</span><span>{atlas.manifest?.clusters.length.toLocaleString() ?? "—"} families</span></div>
-      <p className="field-status">{atlas.manifest?.spatialization.caveat ?? atlas.status}</p>
-    </section>}
+      <div className="hx-scrim-top" />
+      <div className="hx-scrim-bot" />
+      <div className="hx-vignette" />
 
-    {state.mode === "universe" && <>
-      <form className="atlas-query" onSubmit={submitQuery}>
-        <span>QUERY THE UNIVERSE</span>
-        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="protein, function, organism, family, class, identifier…" aria-label="Query the protein universe" />
-        {querying ? <button type="button" aria-label="Cancel spatial query" onClick={() => { atlas.cancelSearch(); setQuerying(false); }}>×</button> : <button type="submit" aria-label="Run spatial query">↗</button>}
-      </form>
-      <section className="universe-status">
-        <p>{focusedCluster ? focusedCluster.label : hoveredProtein ? hoveredProtein.name : "DRAG TO TRAVERSE · SCROLL TO CHANGE SCALE"}</p>
-        <span>{atlas.status}</span>
-        <div><b>{metrics.fps || "—"}</b> FPS <b>{metrics.visibleEntities.toLocaleString()}</b> VISIBLE <b>{metrics.heapMb ?? "—"}</b> MB</div>
-      </section>
-      {hoveredProtein && <section className="protein-signal">
-        <span>{hoveredProtein.id} · {hoveredProtein.structure.kind}</span>
-        <h2>{hoveredProtein.name}</h2>
-        <p>{hoveredProtein.organism}</p>
-        <small>{hoveredProtein.family} · {hoveredProtein.length} aa</small>
-      </section>}
-      {state.query && <section className="query-readout">
-        <div><span>SPATIAL RESPONSE</span><button onClick={() => { setQuery(""); setQueryResults([]); issue({ type: "CLEAR_QUERY" }); }}>CLEAR</button></div>
-        <h2>{queryResults.length ? `${queryResults.length} signals resolved` : "No indexed signals yet"}</h2>
-        <p>Matches resolve as individual addresses; unrelated proteins recede into aggregate context.</p>
-        <ol>{queryResults.slice(0, 4).map((result) => <li key={result.protein.id}>
-          <button onClick={() => selectProtein(result.protein)}><span>{result.protein.id}</span>{result.protein.name}<small>{result.matchedBy.join(" · ")}</small></button>
-        </li>)}</ol>
-      </section>}
-    </>}
+      <Header theme={theme} releaseLabel={releaseLabel} soundOn={sound.enabled} onToggleSound={sound.toggle} ambientOn={sound.ambientOn} onToggleAmbient={sound.toggleAmbient} onToggleTheme={toggleTheme} onHome={returnHome} showBack={state.mode !== "universe"} onBack={returnOneLevel} onOpenGuide={onboarding.openGuide} />
+      <DepthRail
+        mode={state.mode}
+        visible={!loaderVisible}
+        territoryLabel={territoryLabel}
+        proteinName={selectedProtein?.name ?? null}
+        structureLabel={selectedProtein ? (state.mode === "design" ? `Design · ${selectedProtein.structure.accession}` : selectedProtein.structure.accession) : null}
+        onNavigate={navigateLevel}
+      />
 
-    {structureMode && selectedProtein && <>
-      <section className="specimen-card">
-        <p className="eyebrow">SELECTED ADDRESS / {selectedProtein.id}</p>
-        <h2>{selectedProtein.name}</h2>
-        <dl>
-          <div><dt>ORGANISM</dt><dd>{selectedProtein.organism}</dd></div>
-          <div><dt>FAMILY</dt><dd>{selectedProtein.family}</dd></div>
-          <div><dt>RESIDUES</dt><dd>{selectedProtein.length}</dd></div>
-          <div><dt>EVIDENCE</dt><dd>{selectedProtein.structure.kind === "experimental" ? "Experimental structure" : "Predicted structure"}</dd></div>
-        </dl>
-        <p className="citation">UniProt {selectedProtein.id} · {selectedProtein.structure.source} {selectedProtein.structure.accession}</p>
-        <p className="rendering-status">Atlas position encodes annotation-family proximity. It is not a measured structural distance.</p>
-        {selectedProtein.structure.kind === "experimental" && <p className="rendering-status">{structureMetadata.status === "available" && structureMetadata.data.chains[0]?.referenceSequenceCoverage != null ? `RCSB/SIFTS maps ${(structureMetadata.data.chains[0].referenceSequenceCoverage * 100).toFixed(1)}% of UniProt ${structureMetadata.data.chains[0].uniprotAccession}; chains ${structureMetadata.data.chains.map((chain) => chain.id).join(", ")}.` : structureMetadata.status === "loading" ? "Resolving RCSB/SIFTS residue coverage…" : "PDB residue coverage is unavailable; residue actions use author numbering."}</p>}
-      </section>
-      <button className="return" onClick={() => issue({ type: "RETURN_TO_UNIVERSE" })}>← Return to spatial context</button>
-      {state.mode === "structure" && <button className="xray-trigger" disabled={confidence.status !== "available"} onClick={() => issue({ type: "COLOR_BY", scheme: "trusted_core" })}><span>✦</span>{confidence.status === "available" ? `Confidence X-ray · mean pLDDT ${confidence.data.mean.toFixed(1)}` : confidence.status === "loading" ? "Resolving AlphaFold per-residue confidence…" : selectedProtein.structure.kind === "experimental" ? "Prediction confidence is undefined for experimental structures" : confidence.error ?? "Verified confidence unavailable"}</button>}
-      {state.mode === "structure" && selectedProtein.id === "A5F934" && <button className="design-launch" disabled={design.status !== "available"} onClick={launchDesign}>Official 6EHB sequence redesign <span>→</span></button>}
-      {state.mode === "structure" && <aside className="structure-tools" aria-label="Structure controls">
-        <span>REPRESENTATION</span>
-        <div>{(["cartoon", "surface", "ball-and-stick"] as const).map((option) => <button key={option} className={state.structureRepresentation === option ? "active" : ""} onClick={() => issue({ type: "SET_REPRESENTATION", representation: option })}>{option}</button>)}</div>
-        <button className={state.ligandsVisible ? "active" : ""} onClick={() => issue({ type: "SET_LIGAND_VISIBILITY", visible: !state.ligandsVisible })}>{state.ligandsVisible ? "Ligands visible" : "Ligands hidden"}</button>
-        {structureStatus === "unavailable" && <button onClick={() => issue({ type: "RETRY_STRUCTURE" })}>Retry structure</button>}
-      </aside>}
-      {state.mode === "xray" && confidence.status === "available" && <aside className="xray-note">
-        <span>VERIFIED ALPHAFOLD CONFIDENCE</span>
-        <p>Mean pLDDT {confidence.data.mean.toFixed(1)} · {confidence.data.ranges.veryLow.length} very-low-confidence ranges · model {confidence.data.modelVersion}</p>
-        <p>{confidence.data.limitations[0]}</p>
-        <div className="confidence-ranges">{confidence.data.ranges.veryLow.slice(0, 4).map(([start, end]) => <button key={`${start}-${end}`} onClick={() => issue({ type: "FOCUS_RESIDUES", start, end, requestId: Date.now() })}>Focus {start}–{end}</button>)}</div>
-        <button onClick={() => issue({ type: "COLOR_BY", scheme: "confidence" })}>Return to structure</button>
-      </aside>}
-    </>}
+      <QueryBar
+        visible={showQuery}
+        query={query}
+        onQueryChange={setQuery}
+        onSubmit={runQuery}
+        onClear={clearQuery}
+        active={!!state.query}
+        resultCount={queryResults.length || null}
+        filterLabel={dominantTerritoryLabel}
+      />
 
-    {designMode && selectedProtein && design.status === "available" && (() => {
-      const stageIndex = Math.min(state.designStageIndex, design.data.stages.length - 1);
-      const stage = design.data.stages[stageIndex];
-      const selectedCandidate = stage.candidates.find((candidate) => candidate.id === state.selectedDesignCandidateId) ?? stage.candidates[0] ?? null;
-      return <section className="design-hud">
-        <p className="eyebrow">PRECOMPUTED DESIGN EVIDENCE / {stageIndex + 1} OF {design.data.stages.length}</p>
-        <div className="design-reveal"><span className="reveal-orbit" /><strong>{state.designPlayback === "playing" ? "REVEALING EVIDENCE" : "EVIDENCE INSPECTOR"}</strong><small>Imported artifact · no live generation</small></div>
-        <div className="pipeline">{design.data.stages.map((candidateStage, index) => <button key={candidateStage.id} className={index === stageIndex ? "resolved" : ""} onClick={() => issue({ type: "SET_DESIGN_STAGE", stageIndex: index })}>{candidateStage.label}</button>)}</div>
-        <div className="progress"><i style={{ width: `${((stageIndex + 1) / design.data.stages.length) * 100}%` }} /></div>
-        <h2>{stage.label}</h2>
-        <p>{stage.description}</p>
-        {stage.candidates.length > 0 && <div className="design-candidates">{stage.candidates.map((candidate) => <button key={candidate.id} className={candidate.id === selectedCandidate?.id ? "active" : ""} onClick={() => issue({ type: "SELECT_DESIGN_CANDIDATE", candidateId: candidate.id })}>{candidate.name}<small>score {candidate.metrics[0]?.value.toFixed(4)} · recovery {((candidate.metrics[2]?.value ?? 0) * 100).toFixed(1)}%</small></button>)}</div>}
-        {selectedCandidate && <p>ProteinMPNN score {selectedCandidate.metrics[0]?.value.toFixed(4)}. This estimates sequence compatibility with the backbone; it is not affinity or experimental efficacy.</p>}
-        <div className="design-controls"><button onClick={() => issue({ type: "RESTART_DESIGN_TRAJECTORY" })}>Restart</button><button onClick={() => issue({ type: state.designPlayback === "playing" ? "PAUSE_DESIGN_TRAJECTORY" : "PLAY_DESIGN_TRAJECTORY" })}>{state.designPlayback === "playing" ? "Pause" : "Play reveal"}</button><button disabled={stageIndex === 0} onClick={() => issue({ type: "STEP_DESIGN_STAGE", direction: "backward" })}>Back</button><button disabled={stageIndex === design.data.stages.length - 1} onClick={() => issue({ type: "STEP_DESIGN_STAGE", direction: "forward" })}>Step</button><button onClick={() => issue({ type: "COMPARE_DESIGN_CANDIDATES", candidateIds: design.data.stages.flatMap((item) => item.candidates.map((candidate) => candidate.id)).slice(0, 2) })}>Compare</button><button onClick={() => issue({ type: "LEAVE_DESIGN_JOURNEY" })}>Return to source</button></div>
-        <input className="design-scrubber" type="range" min="0" max={design.data.stages.length - 1} value={stageIndex} onChange={(event) => issue({ type: "SEEK_DESIGN_STAGE", stageIndex: Number(event.target.value) })} aria-label="Seek design evidence stage" />
-        {state.mode === "comparison" && <div className="comparison-note">Candidate comparison is limited to the two imported ProteinMPNN outputs. No predicted structure, interface metric, affinity, or wet-lab validation is available in this source run.</div>}
-        <small>{stage.provenance.source} · {stage.provenance.methodVersion}<br />{stage.provenance.limitations[0]}</small>
-      </section>;
-    })()}
+      {(state.mode === "glance" || state.mode === "inspect") && selectedProtein && (
+        <IdentityPanel
+          protein={selectedProtein}
+          detail={detail}
+          tab={state.tab}
+          onSetTab={(tab) => issue({ type: "SET_TAB", tab })}
+          threadsOn={state.threadsOn}
+          onToggleThreads={() => { issue({ type: "TOGGLE_THREADS" }); sound.play("tick"); }}
+          relatedPool={atlas.records}
+          onSelectRelated={selectProtein}
+          showInspectButton={state.mode === "glance"}
+          onInspect={inspectStructure}
+          onOpenSequence={() => issue({ type: state.seqOpen ? "CLOSE_SEQUENCE" : "OPEN_SEQUENCE" })}
+          canDesign={canDesign}
+          onStartDesign={startDesign}
+          onClose={closeProtein}
+        />
+      )}
 
-    <section className={`copilot ${state.mode === "landing" ? "copilot-dormant" : ""}`}>
-      <div className="copilot-header"><span className="orb" /> ATLAS COPILOT <small>GPT-5.6 SCENE PATH</small></div>
-      <div className="copilot-messages">{messages.slice(-3).map((message, index) => <p key={`${message.role}-${index}`} className={`message-${message.role}`}><b>{message.role === "atlas" ? "ATLAS" : "YOU"}</b>{message.text}</p>)}</div>
-      <form onSubmit={ask}><input value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Show me membrane proteins in humans…" aria-label="Ask Atlas" />{copilotBusy ? <button type="button" aria-label="Cancel copilot" onClick={() => copilotRequest.current?.abort()}>×</button> : <button type="submit" aria-label="Send to Atlas">↑</button>}</form>
-    </section>
+      {state.mode === "inspect" && selectedProtein && (
+        <InspectPanel
+          protein={selectedProtein}
+          representation={state.structureRepresentation}
+          onSetRepresentation={(representation) => { issue({ type: "SET_REPRESENTATION", representation }); sound.play("tick"); }}
+          colorMode={state.structureColorMode}
+          onSetColorMode={(colorMode) => { issue({ type: "SET_COLOR_MODE", colorMode }); sound.play("tick"); }}
+          ligandsVisible={state.ligandsVisible}
+          onToggleLigands={() => { issue({ type: "SET_LIGAND_VISIBILITY", visible: !state.ligandsVisible }); sound.play("tick"); }}
+          confidenceXray={state.confidenceXray}
+          onToggleConfidenceXray={() => { issue({ type: "SET_CONFIDENCE_XRAY", visible: !state.confidenceXray }); sound.play("tick"); }}
+          confidence={confidence}
+          structureMetadata={structureMetadata}
+          seqOpen={state.seqOpen}
+          onOpenSequence={() => issue({ type: state.seqOpen ? "CLOSE_SEQUENCE" : "OPEN_SEQUENCE" })}
+          canDesign={canDesign}
+          onStartDesign={startDesign}
+          autoRotate={autoRotate}
+          onToggleAutoRotate={() => setAutoRotate((current) => !current)}
+        />
+      )}
+      {state.mode === "inspect" && structureStatus === "unavailable" && (
+        <button className="hx-command-error" role="alert" onClick={() => issue({ type: "RETRY_STRUCTURE" })}>
+          Structure service unavailable · click to retry
+        </button>
+      )}
 
-    {commandError && <p className="command-error" role="alert">{commandError}<button onClick={() => setCommandError(null)}>Dismiss</button></p>}
+      {state.mode === "design" && selectedProtein && state.design && design.status === "available" && (
+        <DesignPanel
+          proteinName={selectedProtein.name}
+          trajectory={design.data}
+          design={state.design}
+          onPlayPause={onDesignPlayPause}
+          onSeek={(progress) => { designProgressRef.current = progress; issue({ type: "SEEK_DESIGN", progress }); }}
+          onSelectCandidate={(candidateId) => { issue({ type: "SELECT_DESIGN_CANDIDATE", candidateId }); sound.play("select"); }}
+          onExit={() => { issue({ type: "EXIT_DESIGN" }); sound.play("back"); }}
+        />
+      )}
 
-    {loaderVisible && <div className="loader">
-      <div className="loader-orbit"><Image src="/brand/logo/icon_white_svg.svg" alt="" width={45} height={45} priority /><i /><i /><i /></div>
-      <p>{atlas.manifest ? "SPATIALIZING PROTEIN FAMILIES" : "OPENING THE BIOLOGICAL INDEX"}</p>
-      <div className="loader-track"><i style={{ width: `${Math.max(8, atlas.progress * 100)}%` }} /></div>
-      <small>{atlas.error ?? atlas.status} · preserving provenance</small>
-      {atlas.error && <button onClick={() => window.location.reload()}>Retry Atlas loading</button>}
-    </div>}
-  </main>;
+      {state.seqOpen && selectedProtein && (
+        <SequenceTray
+          protein={selectedProtein}
+          detail={detail}
+          selection={state.seqSelection}
+          onSetSelection={(selection) => issue({ type: "SET_SEQUENCE_SELECTION", selection })}
+          onClose={() => issue({ type: "CLOSE_SEQUENCE" })}
+        />
+      )}
+
+      <AskAtlas
+        visible={showAskAtlas}
+        navHint={navHint}
+        hintVisible
+        commandOpen={commandOpen}
+        onOpenCommand={() => setCommandOpen(true)}
+        onCloseCommand={() => setCommandOpen(false)}
+        command={command}
+        onCommandChange={setCommand}
+        onSubmitCommand={submitCommand}
+        busy={copilotBusy}
+        answer={answer}
+        onDismissAnswer={() => setAnswer(null)}
+      />
+
+      {!loaderVisible && state.mode !== "inspect" && state.mode !== "design" && !state.seqOpen && (
+        <div className="hx-telemetry">
+          <div className="hx-telemetry-status">
+            {state.mode === "universe" ? `Atlas ready · ${(atlas.manifest?.coverage.records ?? 0).toLocaleString()} proteins in delivery profile` : state.mode === "territory" ? `${territoryLabel} · ${worldMetrics.visibleCount.toLocaleString()} loaded` : selectedProtein?.name ?? "Atlas ready"}
+          </div>
+          <div className="hx-telemetry-row mono">
+            <span>{worldMetrics.fps || "—"} FPS</span>
+            <span>{worldMetrics.visibleCount.toLocaleString()} VISIBLE</span>
+            <span>{(atlas.addressableCount ?? 575_503).toLocaleString()} INDEXED</span>
+          </div>
+        </div>
+      )}
+
+      {commandError && <p className="hx-command-error" role="alert">{commandError}<button onClick={() => setCommandError(null)}>Dismiss</button></p>}
+
+      {!loaderVisible && <OnboardingInvitation visible={onboarding.invitationVisible} onAccept={onboarding.acceptInvitation} onDecline={onboarding.declineInvitation} />}
+      {!loaderVisible && onboarding.guideActive && <OnboardingGuide onFinish={onboarding.finishGuide} />}
+
+      {loaderVisible && <LoadingScreen theme={theme} stageLabel={stageLabel} progress={atlas.progress} resolvedCount={atlas.records.length} />}
+    </main>
+  );
 }

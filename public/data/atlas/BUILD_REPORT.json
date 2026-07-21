@@ -1,9 +1,9 @@
 {
-  "generatedAt": "2026-07-18T19:12:05.518Z",
+  "generatedAt": "2026-07-21T11:42:06.866Z",
   "records": 75000,
-  "clusters": 19451,
+  "clusters": 19005,
   "shards": 64,
-  "bytes": 32050969,
+  "bytes": 33681356,
   "sourceRelease": "2026_02",
   "completeSourceQuery": false,
   "inputFixture": false

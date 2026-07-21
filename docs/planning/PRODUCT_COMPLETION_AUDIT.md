@@ -96,9 +96,9 @@ The merged protein-universe milestone is the base of `agent/functional-completio
 - Credentialed GPT-5.6 QA requires a valid external `OPENAI_API_KEY` and model entitlement (row 41).
 - Total scene-store migration is intentionally blocked on the final presentation implementation so the temporary shell is not rewritten twice (rows 10 and 11).
 
-## Design trajectory reveal update — 2026-07-20
+## Design trajectory reveal update — 2026-07-20 (superseded 2026-07-21)
 
-The headline reveal now has a deterministic player: validated `design_binder` mapping, play/pause/restart, stage stepping, scrubbing, candidate comparison, safe return, and an explicit evidence boundary. RFdiffusion, candidate folding, docking, confidence and wet-lab validation are unavailable in the public run and are not simulated.
+The headline reveal originally shipped a discrete-stage player (validated eligibility mapping, play/pause/restart, stage stepping, scrubbing, candidate comparison, safe return). That was superseded on 2026-07-21 by a continuous, on-screen, in-flight spatial sequence (`DesignPanel.tsx`, `design.progress: 0..1` across 6 beats) per explicit product direction — see `docs/architecture/DESIGN_TRAJECTORY_ARCHITECTURE.md` and `docs/handoff/DESIGN_DELTA.md` §1. RFdiffusion, candidate folding, docking, confidence and wet-lab validation remain unavailable in the public run and are not simulated — that evidence boundary is unchanged.
 
 ## Definition of completion
 

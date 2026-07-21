@@ -3,28 +3,31 @@ import { z } from "zod";
 const vec3Schema = z.tuple([z.number().finite(), z.number().finite(), z.number().finite()]);
 
 export const sceneCommandSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("ENTER_ATLAS") }).strict(),
-  z.object({ type: z.literal("FLY_TO_PROTEIN"), proteinId: z.string().min(1).max(40) }).strict(),
+  z.object({ type: z.literal("SELECT_PROTEIN"), proteinId: z.string().min(1).max(40) }).strict(),
+  z.object({ type: z.literal("ENTER_TERRITORY"), territoryId: z.string().min(1).max(48) }).strict(),
+  z.object({ type: z.literal("NAV_TO_LEVEL"), level: z.enum(["universe", "territory", "protein", "structure"]) }).strict(),
+  z.object({ type: z.literal("RETURN_ONE_LEVEL") }).strict(),
   z.object({ type: z.literal("RETURN_TO_UNIVERSE") }).strict(),
-  z.object({ type: z.literal("SET_CAMERA_CONTEXT"), context: z.object({ position: vec3Schema, target: vec3Schema, scale: z.enum(["universe", "region", "cluster", "protein"]) }) }).strict(),
+  z.object({ type: z.literal("CLOSE_PROTEIN") }).strict(),
   z.object({ type: z.literal("QUERY_ATLAS"), query: z.string().max(240), resultIds: z.array(z.string().max(40)).max(500) }).strict(),
   z.object({ type: z.literal("CLEAR_QUERY") }).strict(),
-  z.object({ type: z.literal("FOCUS_REGION"), regionId: z.string().min(1).max(48) }).strict(),
-  z.object({ type: z.literal("COLOR_BY"), scheme: z.enum(["confidence", "trusted_core", "hydrophobicity"]) }).strict(),
-  z.object({ type: z.literal("SET_REPRESENTATION"), representation: z.enum(["cartoon", "surface", "ball-and-stick"]) }).strict(),
+  z.object({ type: z.literal("SET_TAB"), tab: z.enum(["glance", "learn"]) }).strict(),
+  z.object({ type: z.literal("TOGGLE_THREADS") }).strict(),
+  z.object({ type: z.literal("OPEN_SEQUENCE") }).strict(),
+  z.object({ type: z.literal("CLOSE_SEQUENCE") }).strict(),
+  z.object({ type: z.literal("SET_SEQUENCE_SELECTION"), selection: z.object({ start: z.number().int().nonnegative(), end: z.number().int().nonnegative() }).nullable() }).strict(),
+  z.object({ type: z.literal("INSPECT_STRUCTURE") }).strict(),
+  z.object({ type: z.literal("SET_REPRESENTATION"), representation: z.enum(["cartoon", "surface", "ball-and-stick", "spacefill"]) }).strict(),
+  z.object({ type: z.literal("SET_COLOR_MODE"), colorMode: z.enum(["chain", "domain"]) }).strict(),
   z.object({ type: z.literal("SET_LIGAND_VISIBILITY"), visible: z.boolean() }).strict(),
+  z.object({ type: z.literal("SET_CONFIDENCE_XRAY"), visible: z.boolean() }).strict(),
   z.object({ type: z.literal("FOCUS_RESIDUES"), start: z.number().int().min(-10_000).max(100_000), end: z.number().int().min(-10_000).max(100_000), chain: z.string().min(1).max(12).optional(), requestId: z.number().int().nonnegative() }).strict(),
   z.object({ type: z.literal("RETRY_STRUCTURE") }).strict(),
-  z.object({ type: z.literal("START_DESIGN_JOURNEY"), trajectoryId: z.string().min(1).max(120), specification: z.string().min(1).max(500) }).strict(),
-  z.object({ type: z.literal("PLAY_DESIGN_TRAJECTORY") }).strict(),
-  z.object({ type: z.literal("PAUSE_DESIGN_TRAJECTORY") }).strict(),
-  z.object({ type: z.literal("STEP_DESIGN_STAGE"), direction: z.enum(["forward", "backward"]) }).strict(),
-  z.object({ type: z.literal("SEEK_DESIGN_STAGE"), stageIndex: z.number().int().min(0).max(100) }).strict(),
-  z.object({ type: z.literal("RESTART_DESIGN_TRAJECTORY") }).strict(),
-  z.object({ type: z.literal("SET_DESIGN_STAGE"), stageIndex: z.number().int().min(0).max(100) }).strict(),
+  z.object({ type: z.literal("START_DESIGN"), trajectoryId: z.string().min(1).max(120), specification: z.string().min(1).max(500) }).strict(),
+  z.object({ type: z.literal("SET_DESIGN_PLAYBACK"), playback: z.enum(["playing", "paused"]) }).strict(),
+  z.object({ type: z.literal("SEEK_DESIGN"), progress: z.number().min(0).max(1) }).strict(),
   z.object({ type: z.literal("SELECT_DESIGN_CANDIDATE"), candidateId: z.string().min(1).max(120) }).strict(),
-  z.object({ type: z.literal("COMPARE_DESIGN_CANDIDATES"), candidateIds: z.array(z.string().min(1).max(120)).min(1).max(2) }).strict(),
-  z.object({ type: z.literal("LEAVE_DESIGN_JOURNEY") }).strict(),
+  z.object({ type: z.literal("EXIT_DESIGN") }).strict(),
 ]);
 
 export const structureReferenceSchema = z.object({
@@ -36,7 +39,7 @@ export const structureReferenceSchema = z.object({
 export const atlasProteinSchema = z.object({
   id: z.string().min(1).max(40),
   entry: z.string().max(64),
-  name: z.string().min(1).max(256),
+  name: z.string().min(1).max(512),
   organism: z.string().max(180),
   taxonomyId: z.number().int().positive().nullable(),
   length: z.number().int().nonnegative(),
@@ -184,6 +187,24 @@ export const designTrajectorySchema = z.object({
   precomputed: z.literal(true), stages: z.array(designStageSchema).min(2), provenance: provenanceSchema,
 });
 
+export const proteinDetailSchema = z.object({
+  schema: z.literal("helicase.protein.detail.v1"),
+  accession: z.string(),
+  sourceUrl: z.string().url(),
+  retrievedAt: z.string(),
+  gene: z.string().nullable(),
+  functionSummary: z.string().nullable(),
+  functionFull: z.string().nullable(),
+  subcellularLocation: z.string().nullable(),
+  disease: z.string().nullable(),
+  pathway: z.string().nullable(),
+  keywords: z.array(z.string()),
+  domains: z.array(z.object({ label: z.string(), start: z.number().int().positive(), end: z.number().int().positive() })),
+  sequence: z.string().regex(/^[A-Z]+$/).nullable(),
+  references: z.array(z.object({ label: z.string(), url: z.string().url() })),
+});
+
 export type ConfidenceDataset = z.infer<typeof confidenceDatasetSchema>;
 export type StructureMetadata = z.infer<typeof structureMetadataSchema>;
 export type DesignTrajectory = z.infer<typeof designTrajectorySchema>;
+export type ProteinDetail = z.infer<typeof proteinDetailSchema>;
